@@ -1,0 +1,15 @@
+data/
+*.log
+.server.pid
+.test-artifacts/
+node_modules/
+
+# Local configuration and generated previews
+.env
+.env.*
+!.env.example
+preview*.jpg
+preview*.png
+.DS_Store
+Thumbs.db
+desktop.ini
