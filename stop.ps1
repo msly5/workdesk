@@ -1,4 +1,4 @@
-$workdeskPidFile = Join-Path $PSScriptRoot '.server.pid'
+﻿$workdeskPidFile = Join-Path $PSScriptRoot '.server.pid'
 if (Test-Path -LiteralPath $workdeskPidFile) {
     $workdeskPid = [int](Get-Content -LiteralPath $workdeskPidFile -Raw)
     $workdeskProcess = Get-CimInstance Win32_Process -Filter "ProcessId = $workdeskPid" -ErrorAction SilentlyContinue
