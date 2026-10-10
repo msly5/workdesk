@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, rename, copyFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import { seedState, demoGuide, demoSvg } from './seed.mjs';
 import { mergeStates } from './public/model.js';
 
@@ -29,6 +30,12 @@ export function validateState(state) {
         if (node.type !== 'link') throw new AppError('文件夹路径仅适用于链接卡片');
         text(node.folderPath, 32767);
       }
+      if (node.localFile !== undefined && (node.type !== 'file' || typeof node.localFile !== 'boolean')) throw new AppError('本地文件标记格式无效');
+      if (node.filePath !== undefined) {
+        if (node.type !== 'file' || node.localFile !== true) throw new AppError('本地文件路径仅适用于文件引用');
+        text(node.filePath, 32767);
+      }
+      if (node.localFile && node.assetId) throw new AppError('本地文件引用不能同时使用附件副本');
       if (node.assetId) validId(node.assetId);
       if (node.type === 'todo' && (!Array.isArray(node.items) || node.items.length > 500 || node.items.some(i => typeof i.text !== 'string' || i.text.length > 5000 || typeof i.done !== 'boolean' || !ID.test(i.id)))) throw new AppError('待办格式无效');
     }
@@ -119,21 +126,46 @@ export class Store {
       if (!name || name.length > 500 || bytes.length > 25 * 1024 * 1024) throw new AppError('文件名无效或文件超过 25 MB');
       const id = randomUUID();
       const file = { id, taskId, name: path.basename(name.replaceAll('\\', '/')), size: bytes.length, mime: String(mime || 'application/octet-stream').replace(/[\r\n]/g, '').slice(0, 100) };
-      await this.atomic(path.join(this.dir, 'files', id), bytes);
       this.files[id] = file;
+      try { await this.atomic(this.namedFile(id), bytes); }
+      catch(error) { delete this.files[id]; throw error; }
       await this.atomic(path.join(this.dir, 'files.json'), JSON.stringify(this.files, null, 2));
       return structuredClone(file);
     });
   }
   async file(id) {
-    validId(id);
-    if (!this.files[id]) throw new AppError('附件不存在', 404);
-    return readFile(path.join(this.dir, 'files', id));
+    return readFile(await this.filePath(id));
+  }
+  namedFile(id) {
+    validId(id); const file=this.files[id];
+    if (!file) throw new AppError('附件不存在',404);
+    // The ID isolates equal names; retain the extension for Windows associations.
+    let name=path.basename(file.name.replaceAll('\\','/')).replace(/[\u0000-\u001f<>:"/\\|?*]/g,'_').replace(/[. ]+$/g,'') || '附件';
+    if(name.length>160) {const ext=path.extname(name).slice(0,20); name=name.slice(0,160-ext.length)+ext;}
+    return path.join(this.dir,'files',id+'--'+name);
+  }
+  async filePath(id) {
+    const named=this.namedFile(id);
+    try {await access(named); return named;}
+    catch(error) {if(error.code!=='ENOENT')throw error; return path.join(this.dir,'files',id);}
+  }
+  openableFile(id) {
+    return this.enqueue(async()=>{
+      const named=this.namedFile(id);
+      const current=await this.filePath(id);
+      if(current!==named) {
+        try {await copyFile(current,named,constants.COPYFILE_EXCL);}
+        catch(error) {if(error.code!=='EEXIST')throw error;}
+      }
+      return named;
+    });
   }
   export() {
     return this.enqueue(async () => {
       const files = {};
-      for (const [id, file] of Object.entries(this.files)) files[id] = { ...file, base64: (await this.file(id)).toString('base64') };
+      for (const [id, file] of Object.entries(this.files)) {
+        const bytes=await this.file(id); files[id]={...file,size:bytes.length,base64:bytes.toString('base64')};
+      }
       return { format: 'workdesk-backup-v1', exportedAt: new Date().toISOString(), state: await this.read(), files };
     });
   }

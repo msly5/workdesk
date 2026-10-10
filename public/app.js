@@ -7,7 +7,9 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const uid = () => crypto.randomUUID();
 const TYPES = { todo:['待办清单','todo'], markdown:['Markdown 文档','markdown'], note:['便签','note'], image:['图片与截图','image'], file:['附件','file'], link:['链接','link'] };
-const cardType = node => node.type === 'link' && node.localFolder ? ['本地文件夹','folder'] : TYPES[node.type];
+const cardType = node => node.type === 'file' && node.localFile ? ['本地文件','file'] : node.type === 'link' && node.localFolder ? ['本地文件夹','folder'] : TYPES[node.type];
+const referencedName = value => (value || '').trim().replace(/^"|"$/g,'').replaceAll('\\','/').split('/').at(-1);
+const fileButtons = node => '<div class="file-actions"><button class="file-open" data-file-open="' + node.id + '">' + icon('external') + '打开文件</button><button data-file-reveal="' + node.id + '">' + icon('folder') + '打开所在文件夹</button></div>';
 const STATUS = { active:'进行中', waiting:'等待中', inbox:'收集中', done:'已完成', archived:'已归档' };
 let state, filter = 'all', view = 'canvas', selected = null, connecting = null, inspectorMode = null;
 let dirty = false, saving = null, saveTimer, lastError = null, editorTab = 'edit';
@@ -172,9 +174,13 @@ function renderCard(node) {
     body = node.assetId ? '<img src="/api/files/' + node.assetId + '" alt="' + esc(node.title) + '" draggable="false"><p class="image-caption">' + esc(node.content || node.fileName || '图片') + '</p>' : '<p class="node-text-empty">拖入或粘贴一张截图</p>';
     footer = '<span>图片 · ' + fileSize(node.size) + '</span><button data-preview="' + node.id + '">' + icon('external') + '查看原图</button>';
   } else if (node.type === 'file') {
-    const ext = (node.fileName || node.title).split('.').at(-1).slice(0,5).toUpperCase();
-    body = '<div class="file-content"><span class="file-ext">' + esc(ext) + '</span><span class="file-info"><strong>' + esc(node.content || node.fileName || '本地附件') + '</strong><small>' + fileSize(node.size) + ' · 保存在本机</small></span><a class="download-button" href="/api/files/' + node.assetId + '?download=1" title="下载附件" aria-label="下载附件">' + icon('download') + '</a></div>';
-    footer = '<span>附件</span><button data-edit="' + node.id + '">' + icon('edit') + '备注</button>';
+    const name = node.localFile ? referencedName(node.filePath) || '尚未填写文件路径' : node.fileName || node.title;
+    const ext = name.includes('.') ? name.split('.').at(-1).slice(0,5).toUpperCase() : 'FILE';
+    body = '<div class="file-content"><span class="file-ext">' + esc(ext) + '</span><span class="file-info"><strong title="' + esc(name) + '">' + esc(name) + '</strong><small>' + (node.localFile ? '原文件 · 修改直接保存到原路径' : '附件副本 · 保存在工作台') + '</small></span></div>';
+    if (node.localFile) body += '<p class="folder-path" title="' + esc(node.filePath || '') + '">' + esc(node.filePath || '编辑卡片，填写本机文件路径') + '</p>';
+    if (node.content) body += '<p class="link-description">' + esc(node.content) + '</p>';
+    body += fileButtons(node);
+    footer = '<span>' + (node.localFile ? '本地文件引用' : '附件副本') + '</span><button data-edit="' + node.id + '">' + icon('edit') + (node.localFile ? '编辑路径' : '备注') + '</button>';
   } else if (node.type === 'link') {
     const url = safeURL(node.url || '');
     let label = '添加一个参考链接';
@@ -246,6 +252,9 @@ function syncInspector() {
     ($('#node-content-input') && $('#node-content-input').value!==(node.content||'')) ||
     ($('#node-url-input') && $('#node-url-input').value!==(node.url||'')) ||
     ($('#node-folder-input') && $('#node-folder-input').value!==(node.folderPath||'')) ||
+    ($('#node-file-path-input') && $('#node-file-path-input').value!==(node.filePath||'')) ||
+    (inspectorRendered?.localFile!==node.localFile) ||
+    (inspectorRendered?.filePath!==node.filePath) ||
     (inspectorRendered?.localFolder!==node.localFolder) ||
     (inspectorRendered?.folderPath!==node.folderPath) ||
     (editorTab==='preview' && inspectorRendered?.content!==node.content) ||
@@ -284,7 +293,12 @@ function renderInspector() {
     editor += '<span class="field-label">行动清单</span><div id="editor-todos">' + node.items.map(item => '<div class="editor-todo-item"><button class="check-box' + (item.done ? ' checked' : '') + '" data-editor-toggle="' + item.id + '" aria-label="切换完成状态">' + (item.done ? icon('check') : '') + '</button><input data-item-input="' + item.id + '" value="' + esc(item.text) + '" aria-label="待办内容" maxlength="5000"><button class="icon-button" data-remove-item="' + item.id + '" aria-label="删除待办项">' + icon('close') + '</button></div>').join('') + '</div><button class="add-todo-item" id="add-todo-item">' + icon('plus') + '添加一项</button>';
   } else {
     if (node.type === 'image' && node.assetId) editor += '<img class="editor-image" src="/api/files/' + node.assetId + '" alt="' + esc(node.title) + '" data-preview="' + node.id + '">';
-    if (node.type === 'file') editor += '<div class="editor-file"><span class="file-ext">' + esc((node.fileName || '').split('.').at(-1).slice(0,5).toUpperCase()) + '</span><span class="file-info"><strong>' + esc(node.fileName || '附件') + '</strong><small>' + fileSize(node.size) + '</small></span></div>';
+    if (node.type === 'file') {
+      const name = node.localFile ? referencedName(node.filePath) || '本地文件' : node.fileName || '附件';
+      editor += '<div class="editor-file"><span class="file-ext">' + esc(name.includes('.') ? name.split('.').at(-1).slice(0,5).toUpperCase() : 'FILE') + '</span><span class="file-info"><strong>' + esc(name) + '</strong><small>' + (node.localFile ? '本地文件引用' : fileSize(node.size) + ' · 导入时大小') + '</small></span></div>';
+      if (node.localFile) editor += '<label class="field"><span>原文件路径</span><input id="node-file-path-input" value="' + esc(node.filePath || '') + '" placeholder="D:\\资料\\报告.docx" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">只保存路径，不复制文件。打开后修改的是原文件；移动或删除后需更新路径。可在资源管理器中右键“复制文件地址”后粘贴。</p>';
+      else editor += '<p class="editor-hint">这是导入时的附件副本，与原文件独立。打开后编辑这份副本，后续下载和备份会读取修改后的内容。</p>';
+    }
     if (node.type === 'link') {
       editor += '<label class="field"><span>链接类型</span><select id="node-link-kind"><option value="web"' + (!node.localFolder ? ' selected' : '') + '>网页链接</option><option value="folder"' + (node.localFolder ? ' selected' : '') + '>本地文件夹</option></select></label>';
       if (node.localFolder) editor += '<label class="field"><span>文件夹路径</span><input id="node-folder-input" value="' + esc(node.folderPath || '') + '" placeholder="D:\\项目资料" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">' + (node.folderPath === undefined ? '当前打开工作台数据目录，填写路径后可改为指定文件夹。' : '填写本机完整文件夹路径。这里只保存引用，不复制文件夹内容。') + '</p><button class="subtle-button" data-folder="' + node.id + '">' + icon('folder') + '打开文件夹</button>';
@@ -292,7 +306,8 @@ function renderInspector() {
     }
     editor += '<label class="field"><span>' + (node.type === 'note' ? '便签内容' : '备注') + '</span><textarea id="node-content-input" rows="' + (node.type === 'note' ? 8 : 4) + '" placeholder="写下一点想法…">' + esc(node.content || '') + '</textarea></label>';
     if (node.type === 'note') editor += '<span class="field-label">便签颜色</span><div class="color-picker">' + ['yellow','blue','green','pink'].map((color,i) => '<button class="color-swatch ' + color + (node.color === color ? ' selected' : '') + '" data-color="' + color + '" aria-label="' + ['黄色','蓝色','绿色','粉色'][i] + '便签"></button>').join('') + '</div>';
-    if (['image','file'].includes(node.type) && node.assetId) editor += '<a class="subtle-button" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载原文件</a>';
+    if (node.type === 'file' || (node.type === 'image' && node.assetId)) editor += fileButtons(node);
+    if (['image','file'].includes(node.type) && node.assetId) editor += '<a class="subtle-button file-download" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载副本</a>';
   }
   $('#inspector').classList.remove('hidden');
   $('#inspector').innerHTML = '<div class="inspector-header"><span class="inspector-type">' + icon(type[1]) + type[0] + '</span><span class="inspector-header-actions"><button class="icon-button" id="delete-node" title="删除卡片" aria-label="删除卡片">' + icon('trash') + '</button><button class="icon-button" id="close-inspector" aria-label="关闭编辑器">' + icon('close') + '</button></span></div><div class="inspector-main">' + editor + '</div><div class="inspector-footer"><span>' + icon('save') + ' 更改自动保存</span><button id="connect-from-editor">' + icon('link') + ' 连接卡片</button></div>';
@@ -364,8 +379,14 @@ function setTaskStatus(status) {
   toast(status === 'archived' ? '已归档 · 可以在左下角恢复' : '任务已设为' + STATUS[status]);
 }
 function nodeMenu(anchor, id) {
+  const node=activeTask()?.nodes.find(n=>n.id===id);
   popover(anchor,[
     {label:'编辑卡片',icon:'edit',action:() => openEditor(id)},
+    ...((node?.type==='file'||node?.type==='image'&&node.assetId)?[
+      {label:'打开文件',icon:'external',action:()=>fileAction(id,'open')},
+      {label:'打开所在文件夹',icon:'folder',action:()=>fileAction(id,'reveal')},
+      ...(node.assetId?[{label:'下载副本',icon:'download',action:()=>{const a=document.createElement('a');a.href='/api/files/'+node.assetId+'?download=1';a.click();}}]:[]),null
+    ]:[]),
     {label:'连接到其他卡片',icon:'link',action:() => startConnection(id)},
     {label:'复制卡片',icon:'layers',action:() => {const node=structuredClone(activeTask().nodes.find(n=>n.id===id));node.id=uid();node.title+=' · 副本';node.x+=35;node.y+=35;if(node.items)node.items.forEach(i=>i.id=uid());activeTask().nodes.push(node);activity('复制卡片');markChanged();renderWorkspace();}},
     null,{label:'移除卡片',icon:'trash',danger:true,action:() => deleteNode(id)}
@@ -423,7 +444,7 @@ function edgeDialog(id) {
 }
 function previewImage(id) {
   const node = activeTask()?.nodes.find(n => n.id === id); if (!node?.assetId) return;
-  showModal(node.title,'<img class="image-full" src="/api/files/' + node.assetId + '" alt="' + esc(node.title) + '">','<a class="subtle-button" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载原图</a>',{className:'image-modal'});
+  showModal(node.title,'<img class="image-full" src="/api/files/' + node.assetId + '" alt="' + esc(node.title) + '">',fileButtons(node)+'<a class="subtle-button" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载副本</a>',{className:'image-modal'});
 }
 function download(name, bytes, mime = 'application/json') {
   const url = URL.createObjectURL(new Blob([bytes],{type:mime})), anchor = document.createElement('a');
@@ -456,6 +477,19 @@ async function openFolder(cardId) {
     toast(result.foreground === false ? '文件夹已打开，请点击任务栏中的资源管理器查看' : result.foreground === true ? '文件夹已打开' : typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
   }
   catch(error){toast(error.message,{error:true});}
+}
+async function fileAction(cardId,action) {
+  try {
+    const task=activeTask(),node=task?.nodes.find(n=>n.id===cardId);
+    if(!node)throw new Error('文件卡片不存在');
+    if(node.localFile && !node.filePath?.trim()) {
+      openEditor(cardId); $('#node-file-path-input')?.focus(); toast('请先填写原文件路径',{error:true}); return;
+    }
+    const taskId=task.id;
+    await flushSave();
+    const result=await request('/api/file-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({taskId,cardId,action})});
+    toast(action==='open' ? '已请求使用默认程序打开'+(node.localFile?'原文件':'附件副本') : result.foreground===false ? '已定位文件，请点击任务栏中的资源管理器查看' : '已打开所在文件夹并选中文件');
+  } catch(error) {toast(error.message,{error:true});}
 }
 async function uploadFiles(files, point) {
   if (!activeTask()) return taskDialog();
@@ -532,7 +566,10 @@ $('#workspace-menu').onclick = () => popover($('#workspace-menu'),[
 ]);
 $$('[data-add]').forEach(button=>button.onclick=()=>addNode(button.dataset.add));
 $('#add-folder').onclick = () => { addNode('link',undefined,{title:'本地文件夹',localFolder:true,folderPath:''}); $('#node-folder-input')?.focus(); };
-$('#add-file').onclick = () => $('#file-input').click();
+$('#add-file').onclick = () => popover($('#add-file'),[
+  {label:'导入附件副本',icon:'upload',action:()=>$('#file-input').click()},
+  {label:'添加本地文件',icon:'file',action:()=>{addNode('file',undefined,{title:'本地文件',localFile:true,filePath:''});$('#node-file-path-input')?.focus();}}
+]);
 $('#add-image').onclick = () => $('#image-input').click();
 [$('#file-input'),$('#image-input')].forEach(input=>input.onchange=()=>{uploadFiles([...input.files]);input.value='';});
 $('#modal').addEventListener('click',event=>{if(event.target.closest('[data-close-modal]') || event.target===$('#modal'))$('#modal').close();});
@@ -550,6 +587,8 @@ document.addEventListener('click',event=>{
   if (find('[data-edit]')) {event.preventDefault();return openEditor(find('[data-edit]').dataset.edit);}
   if (find('[data-preview]')) return previewImage(find('[data-preview]').dataset.preview);
   if (find('[data-folder]')) return openFolder(find('[data-folder]').dataset.folder);
+  if (find('[data-file-open]')) return fileAction(find('[data-file-open]').dataset.fileOpen,'open');
+  if (find('[data-file-reveal]')) return fileAction(find('[data-file-reveal]').dataset.fileReveal,'reveal');
   if (card && connecting && !target.closest('a,button')) return finishConnection(card.dataset.id);
   if (find('.edge-group')) return edgeDialog(find('.edge-group').dataset.edge);
   if (find('[data-toggle]') && card) {
@@ -577,6 +616,9 @@ $('#inspector').addEventListener('input',event=>{
   else if(event.target.id==='node-content-input')node.content=event.target.value;
   else if(event.target.id==='node-url-input')node.url=event.target.value;
   else if(event.target.id==='node-folder-input')node.folderPath=event.target.value;
+  else if(event.target.id==='node-file-path-input') {
+    node.filePath=event.target.value;
+  }
   else if(event.target.dataset.itemInput){const item=node.items.find(i=>i.id===event.target.dataset.itemInput);if(item)item.text=event.target.value;}
   else return;
   markChanged();refreshNode();
@@ -584,6 +626,10 @@ $('#inspector').addEventListener('input',event=>{
 $('#inspector').addEventListener('compositionstart',()=>{composing=true;clearTimeout(saveTimer);});
 $('#inspector').addEventListener('compositionend',()=>{finishComposition();if(dirty)markChanged();});
 $('#inspector').addEventListener('change',event=>{
+  if(event.target.id==='node-file-path-input') {
+    const node=activeNode();
+    if(node?.title==='本地文件' && referencedName(node.filePath)) {node.title=referencedName(node.filePath);$('#node-title-input').value=node.title;markChanged();refreshNode();}
+  }
   if (event.target.id === 'node-link-kind') {
     const node=activeNode(); if (!node || node.type!=='link') return;
     node.localFolder=event.target.value==='folder';

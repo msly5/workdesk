@@ -22,6 +22,9 @@ $ErrorActionPreference='Stop'
 $tokens=$null; $parseErrors=$null
 $ast=[System.Management.Automation.Language.Parser]::ParseFile(${quote(script)},[ref]$tokens,[ref]$parseErrors)
 if($parseErrors.Count){throw 'Helper syntax failed'}
+$openTokens=$null; $openErrors=$null
+[void][System.Management.Automation.Language.Parser]::ParseFile(${quote(path.join(ROOT,'open-file.ps1'))},[ref]$openTokens,[ref]$openErrors)
+if($openErrors.Count){throw 'File opener syntax failed'}
 # Load pure matching functions without running desktop automation.
 foreach($definition in $ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst]},$false)){
   Invoke-Expression $definition.Extent.Text

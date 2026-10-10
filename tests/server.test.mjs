@@ -24,6 +24,7 @@ test('读取状态、上传和下载保持原始字节，附件响应禁止脚�
   assert.equal(uploaded.status, 201);
   const file = await uploaded.json();
   const downloaded = await fetch(url + '/api/files/' + file.id);
+  assert.equal(downloaded.headers.get('cache-control'),'no-store');
   assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
   assert.match(downloaded.headers.get('content-security-policy'), /sandbox/);
 });
@@ -51,13 +52,18 @@ test('状态保存后重新读取，新版本冲突返回 409', async t => {
 
 // Replace only the OS boundary: tests must not open Explorer windows on the
 // developer's desktop. The actual HTTP handler and data directory remain real.
-function explorerStub(t, { fail = false, pending = false, foreground = true, focusFails = false } = {}) {
-  const calls = [], focusCalls = [];
+function explorerStub(t, { fail = false, pending = false, foreground = true, focusFails = false, openFails = false } = {}) {
+  const calls = [], focusCalls = [], openCalls = [];
   let notifyStarted;
   const started = new Promise(resolve => { notifyStarted = resolve; });
   for (const method of ['execFile', 'spawn']) {
     const original = childProcess[method];
     t.mock.method(childProcess, method, (file, args, options, callback) => {
+      if (path.basename(file).toLowerCase() === 'powershell.exe' && args.some(arg => arg.endsWith('open-file.ps1'))) {
+        openCalls.push({file,args,options});
+        queueMicrotask(() => callback(openFails ? new Error('Default app unavailable') : null, '', ''));
+        return new EventEmitter();
+      }
       if (path.basename(file).toLowerCase() === 'powershell.exe' && args.some(arg => arg.endsWith('focus-folder.ps1'))) {
         focusCalls.push({file,args,options});
         queueMicrotask(() => callback(focusFails ? new Error('Focus helper unavailable') : null, JSON.stringify({foreground}), ''));
@@ -76,8 +82,83 @@ function explorerStub(t, { fail = false, pending = false, foreground = true, foc
   }
   syncBuiltinESMExports();
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-  return { calls, started, focusCalls };
+  return { calls, started, focusCalls, openCalls };
 }
+
+async function saveFileCard(url, fields) {
+  const state=await (await fetch(url+'/api/state')).json(); const task=state.tasks[0];
+  const card={id:'file-action-card',type:'file',title:'文件操作',content:'',x:0,y:0,width:310,...fields};
+  task.nodes=task.nodes.filter(n=>n.id!==card.id); task.nodes.push(card);
+  const saved=await fetch(url+'/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)});
+  assert.equal(saved.status,200); return {taskId:task.id,cardId:card.id};
+}
+function fileAction(url,target,action='open',headers={}) {
+  return fetch(url+'/api/file-action',{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify({...target,action})});
+}
+test('附件由默认程序打开带扩展名副本，定位选择同一个文件，编辑后下载同步', {skip:process.platform!=='win32'}, async t=>{
+  const {openCalls,calls,focusCalls}=explorerStub(t); const {url}=await app(t);
+  const state=await (await fetch(url+'/api/state')).json();
+  const asset=await (await fetch(url+'/api/files?taskId='+state.tasks[0].id+'&name='+encodeURIComponent('报告 中文 & ;.txt'),{method:'POST',body:'原内容'})).json();
+  const target=await saveFileCard(url,{assetId:asset.id});
+  assert.equal((await fileAction(url,target)).status,200);
+  const file=openCalls[0].options.env.WORKDESK_OPEN_FILE;
+  assert.equal(path.extname(file),'.txt'); assert.ok(file.includes(asset.id));
+  assert.ok(!openCalls[0].args.includes(file)); assert.ok(!openCalls[0].args.includes('-Command'));
+  await writeFile(file,'外部编辑后的内容');
+  const reveal=await fileAction(url,target,'reveal'); assert.equal(reveal.status,200);
+  assert.equal((await reveal.json()).foreground,true);
+  assert.deepEqual(calls[0].args,['/select,','"'+file+'"']);
+  assert.equal(calls[0].options.windowsVerbatimArguments,true);
+  assert.equal(focusCalls[0].options.env.WORKDESK_FOCUS_FOLDER,path.dirname(file));
+  assert.equal(await (await fetch(url+'/api/files/'+asset.id)).text(),'外部编辑后的内容');
+});
+test('本地文件引用直接使用保存的原路径，特殊字符不成为命令', {skip:process.platform!=='win32'}, async t=>{
+  const {openCalls,calls}=explorerStub(t); const {url,dir}=await app(t);
+  const file=path.join(dir,"原文件 中文 & ; ' , 空格.txt"); await writeFile(file,'原文件');
+  const target=await saveFileCard(url,{localFile:true,filePath:' "'+file.replaceAll('\\','/')+'" '});
+  assert.equal((await fileAction(url,target)).status,200);
+  assert.equal(openCalls[0].options.env.WORKDESK_OPEN_FILE,file);
+  assert.equal((await fileAction(url,target,'reveal')).status,200);
+  assert.deepEqual(calls[0].args,['/select,','"'+file+'"']);
+  assert.ok(!calls[0].options.shell);
+  const comma=path.join(dir,'report,2026.csv'); await writeFile(comma,'test');
+  const commaTarget=await saveFileCard(url,{localFile:true,filePath:comma});
+  assert.equal((await fileAction(url,commaTarget,'reveal')).status,200);
+  assert.deepEqual(calls[1].args,['/select,','"'+comma+'"']);
+  assert.equal(calls[1].options.windowsVerbatimArguments,true);
+});
+test('本地文件动作拒绝错误卡片、跨站、非法路径及不存在文件', {skip:process.platform!=='win32'}, async t=>{
+  const {openCalls,calls}=explorerStub(t); const {url,dir}=await app(t);
+  const state=await (await fetch(url+'/api/state')).json();
+  assert.equal((await fileAction(url,{path:'C:\\Windows\\notepad.exe'})).status,400);
+  assert.equal((await fileAction(url,{taskId:state.tasks[0].id,cardId:'missing'})).status,404);
+  assert.equal((await fileAction(url,{taskId:state.tasks[0].id,cardId:state.tasks[0].nodes.find(n=>n.type==='markdown').id})).status,400);
+  for(const [value,status] of [['',400],['relative.txt',400],['https://example.org',400],['\\\\server\\share\\a.txt',400],[dir,400],[path.join(dir,'missing.txt'),404]]) {
+    const target=await saveFileCard(url,{localFile:true,filePath:value});
+    assert.equal((await fileAction(url,target)).status,status,value);
+  }
+  const target=await saveFileCard(url,{localFile:true,filePath:path.join(dir,'missing.txt')});
+  assert.equal((await fileAction(url,target,'open',{Origin:'https://example.org'})).status,403);
+  assert.equal((await fileAction(url,target,'execute')).status,400);
+  assert.equal(openCalls.length,0); assert.equal(calls.length,0);
+});
+test('程序和脚本可定位但不直接运行，默认程序启动失败返回可操作错误', {skip:process.platform!=='win32'}, async t=>{
+  const {openCalls}=explorerStub(t,{openFails:true}); const {url,dir}=await app(t);
+  const script=path.join(dir,'脚本.cmd'); await writeFile(script,'test');
+  let target=await saveFileCard(url,{localFile:true,filePath:script});
+  assert.equal((await fileAction(url,target)).status,400); assert.equal(openCalls.length,0);
+  for(const name of ['.cmd','.exe','命令.pif','脚本.cmd.']) {
+    const file=path.join(dir,name); await writeFile(file,'test');
+    const program=await saveFileCard(url,{localFile:true,filePath:file});
+    assert.equal((await fileAction(url,program)).status,400,name);
+  }
+  assert.equal(openCalls.length,0);
+  assert.equal((await fileAction(url,target,'reveal')).status,200);
+  const file=path.join(dir,'记录.txt'); await writeFile(file,'内容');
+  target=await saveFileCard(url,{localFile:true,filePath:file});
+  const response=await fileAction(url,target); assert.equal(response.status,500);
+  assert.match((await response.json()).error,/默认程序|打开/);
+});
 
 test('打开数据文件夹使用可见窗口和实际数据路径，跨站请求不启动资源管理器', { skip: process.platform !== 'win32' }, async t => {
   const { calls } = explorerStub(t);

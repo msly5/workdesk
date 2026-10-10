@@ -127,3 +127,19 @@ test('MCP 新建和修改本地文件夹引用，保存后网页可见，支持�
   const web = (await call('update_card',{task_id,card_id:folder.id,url:'https://example.com'})).card;
   assert.equal(web.localFolder,false); assert.equal(web.folderPath,undefined); assert.equal(web.url,'https://example.com');
 });
+
+test('MCP 保存本地文件引用且不读取原文件，拒绝与附件混用', async t=>{
+  const {call,url,client}=await fixture(t);
+  const task_id=(await call('create_task',{title:'本地文件验收'})).task.id;
+  const card=(await call('create_card',{task_id,type:'file',title:'工作记录',file_path:'D:\\不存在的资料\\记录.docx'})).card;
+  assert.equal(card.localFile,true); assert.equal(card.assetId,undefined);
+  await call('update_card',{task_id,card_id:card.id,file_path:'C:\\工作 中文\\报告.xlsx'});
+  const state=await (await fetch(url+'/api/state')).json();
+  assert.equal(state.tasks.find(t=>t.id===task_id).nodes[0].filePath,'C:\\工作 中文\\报告.xlsx');
+  assert.equal((await call('list_cards',{task_id})).cards[0].filePath,'C:\\工作 中文\\报告.xlsx');
+  for(const fields of [{type:'note',file_path:'D:\\a.txt'},{type:'file',file_path:'D:\\a.txt',asset_id:'demo-guide'}]) {
+    assert.equal((await client.callTool({name:'create_card',arguments:{task_id,title:'错误引用',...fields}})).isError,true);
+  }
+  const attached=(await call('attach_file',{task_id,name:'附件.txt',base64:Buffer.from('副本').toString('base64')})).card;
+  assert.equal((await client.callTool({name:'update_card',arguments:{task_id,card_id:attached.id,file_path:'D:\\原文件.txt'}})).isError,true);
+});

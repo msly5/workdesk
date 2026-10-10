@@ -7,6 +7,7 @@ import { Store, AppError } from './storage.mjs';
 import { WorkdeskService } from './workdesk-service.mjs';
 import { handleMcp } from './mcp.mjs';
 import { focusFolder } from './folder-window.mjs';
+import {localFilePath,actOnFile} from './local-files.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
@@ -82,10 +83,29 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
           'Content-Type':inline ? file.mime : 'application/octet-stream',
           'Content-Disposition':`${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
           'Content-Length':bytes.length,
-          'Content-Security-Policy':"sandbox; default-src 'none'; style-src 'unsafe-inline'", 'Cache-Control':'private, max-age=3600'
+          'Content-Security-Policy':"sandbox; default-src 'none'; style-src 'unsafe-inline'", 'Cache-Control':'no-store'
         }); return res.end(bytes);
       }
       if (route === '/api/backup' && req.method === 'GET') return json(res, 200, await store.export());
+      if (route === '/api/file-action' && req.method === 'POST') {
+        if(process.platform!=='win32')throw new AppError('直接打开文件目前仅支持 Windows。');
+        let target;
+        try {target=JSON.parse((await body(req,4096)).toString('utf8'));}
+        catch(error) {if(error instanceof AppError)throw error;throw new AppError('无法识别文件操作请求。');}
+        if(!target || typeof target.taskId!=='string' || typeof target.cardId!=='string' || !['open','reveal'].includes(target.action))throw new AppError('请指定已保存的文件卡片和操作。');
+        const state=await store.read();
+        const card=state.tasks.find(t=>t.id===target.taskId)?.nodes.find(n=>n.id===target.cardId);
+        if(!card)throw new AppError('文件卡片不存在。',404);
+        if(!['file','image'].includes(card.type))throw new AppError('该卡片不是附件或本地文件。');
+        let file;
+        if(card.localFile===true)file=await localFilePath(card.filePath);
+        else {
+          const asset=store.files[card.assetId];
+          if(!asset || asset.taskId!==target.taskId)throw new AppError('附件不存在或不属于当前任务。',404);
+          file=await store.openableFile(card.assetId);
+        }
+        return json(res,200,await actOnFile(file,target.action));
+      }
       if (route === '/api/open-folder' && req.method === 'POST') {
         if (process.platform !== 'win32') throw new AppError('数据目录：' + store.dir);
         const bytes = await body(req, 4096);
