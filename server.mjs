@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { Store, AppError } from './storage.mjs';
 import { WorkdeskService } from './workdesk-service.mjs';
 import { handleMcp } from './mcp.mjs';
+import { focusFolder } from './folder-window.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
@@ -113,7 +114,8 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
         } catch {
           throw new AppError('无法启动资源管理器，请手动打开文件夹：' + folder, 500);
         }
-        return json(res, 200, { ok:true });
+        const foreground = await focusFolder(folder);
+        return json(res, 200, { ok:true, foreground });
       }
       const file = route === '/' ? 'index.html' : route.slice(1);
       if (req.method !== 'GET' || !STATIC.has(file)) throw new AppError('内容不存在', 404);

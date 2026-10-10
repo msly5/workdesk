@@ -51,13 +51,18 @@ test('状态保存后重新读取，新版本冲突返回 409', async t => {
 
 // Replace only the OS boundary: tests must not open Explorer windows on the
 // developer's desktop. The actual HTTP handler and data directory remain real.
-function explorerStub(t, { fail = false, pending = false } = {}) {
-  const calls = [];
+function explorerStub(t, { fail = false, pending = false, foreground = true, focusFails = false } = {}) {
+  const calls = [], focusCalls = [];
   let notifyStarted;
   const started = new Promise(resolve => { notifyStarted = resolve; });
   for (const method of ['execFile', 'spawn']) {
     const original = childProcess[method];
     t.mock.method(childProcess, method, (file, args, options, callback) => {
+      if (path.basename(file).toLowerCase() === 'powershell.exe' && args.some(arg => arg.endsWith('focus-folder.ps1'))) {
+        focusCalls.push({file,args,options});
+        queueMicrotask(() => callback(focusFails ? new Error('Focus helper unavailable') : null, JSON.stringify({foreground}), ''));
+        return new EventEmitter();
+      }
       if (path.basename(file).toLowerCase() !== 'explorer.exe') return original(file, args, options, callback);
       const child = new EventEmitter(); child.unref = () => {};
       calls.push({ file, args, options, child }); notifyStarted();
@@ -71,7 +76,7 @@ function explorerStub(t, { fail = false, pending = false } = {}) {
   }
   syncBuiltinESMExports();
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
-  return { calls, started };
+  return { calls, started, focusCalls };
 }
 
 test('打开数据文件夹使用可见窗口和实际数据路径，跨站请求不启动资源管理器', { skip: process.platform !== 'win32' }, async t => {
@@ -162,4 +167,32 @@ test('打开自定义目录必须使用存在的文件夹卡片，旧数据目�
   const legacy = task.nodes.find(node=>node.localFolder);
   assert.equal((await post({taskId:task.id,cardId:legacy.id})).status, 200);
   assert.deepEqual(calls[0].args, [dir]);
+});
+
+test('打开指定目录后按完整路径请求前台显示，路径仅通过环境变量传递', { skip: process.platform !== 'win32' }, async t => {
+  const { calls, focusCalls } = explorerStub(t);
+  const { url, dir } = await app(t);
+  const folder = path.join(dir, "资料 & 项目; '中文 空格"); await mkdir(folder);
+  const target = await saveFolderCard(url, folder);
+  const response = await fetch(url+'/api/open-folder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(target)});
+  assert.equal(response.status,200);
+  assert.equal((await response.json()).foreground,true);
+  assert.equal(calls.length,1); assert.equal(focusCalls.length,1);
+  assert.equal(focusCalls[0].options.env.WORKDESK_FOCUS_FOLDER,folder);
+  assert.equal(focusCalls[0].args.includes(folder),false);
+  assert.equal(focusCalls[0].args.includes('-Command'),false);
+  assert.equal(focusCalls[0].options.windowsHide,true);
+  assert.ok(focusCalls[0].options.timeout>0 && focusCalls[0].options.timeout<=10000);
+});
+
+test('前台激活被拒绝或辅助程序失败时仍保留已打开结果，并返回未激活状态', { skip: process.platform !== 'win32' }, async t => {
+  const fixture = await app(t);
+  for (const focusFails of [false,true]) {
+    const { calls, focusCalls } = explorerStub(t,{foreground:false,focusFails});
+    const response = await fetch(fixture.url+'/api/open-folder',{method:'POST'});
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).foreground,false);
+    assert.equal(calls.length,1); assert.equal(focusCalls.length,1);
+    t.mock.restoreAll(); syncBuiltinESMExports();
+  }
 });

@@ -452,7 +452,8 @@ async function openFolder(cardId) {
       options.body = JSON.stringify({taskId:task.id,cardId});
       await flushSave();
     }
-    await request('/api/open-folder',options); toast(typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
+    const result = await request('/api/open-folder',options);
+    toast(result.foreground === false ? '文件夹已打开，请点击任务栏中的资源管理器查看' : result.foreground === true ? '文件夹已打开' : typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
   }
   catch(error){toast(error.message,{error:true});}
 }
