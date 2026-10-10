@@ -24,6 +24,11 @@ export function validateState(state) {
       validId(node.id); if (nodes.has(node.id)) throw new AppError('卡片标识重复'); nodes.add(node.id);
       if (!TYPES.has(node.type) || !Number.isFinite(node.x) || !Number.isFinite(node.y) || !Number.isFinite(node.width) || node.width < 180 || node.width > 1500) throw new AppError('卡片格式无效');
       text(node.title, 500); text(node.content ?? '');
+      if (node.localFolder !== undefined && (node.type !== 'link' || typeof node.localFolder !== 'boolean')) throw new AppError('文件夹标记格式无效');
+      if (node.folderPath !== undefined) {
+        if (node.type !== 'link') throw new AppError('文件夹路径仅适用于链接卡片');
+        text(node.folderPath, 32767);
+      }
       if (node.assetId) validId(node.assetId);
       if (node.type === 'todo' && (!Array.isArray(node.items) || node.items.length > 500 || node.items.some(i => typeof i.text !== 'string' || i.text.length > 5000 || typeof i.done !== 'boolean' || !ID.test(i.id)))) throw new AppError('待办格式无效');
     }

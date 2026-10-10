@@ -7,6 +7,7 @@ const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const uid = () => crypto.randomUUID();
 const TYPES = { todo:['待办清单','todo'], markdown:['Markdown 文档','markdown'], note:['便签','note'], image:['图片与截图','image'], file:['附件','file'], link:['链接','link'] };
+const cardType = node => node.type === 'link' && node.localFolder ? ['本地文件夹','folder'] : TYPES[node.type];
 const STATUS = { active:'进行中', waiting:'等待中', inbox:'收集中', done:'已完成', archived:'已归档' };
 let state, filter = 'all', view = 'canvas', selected = null, connecting = null, inspectorMode = null;
 let dirty = false, saving = null, saveTimer, lastError = null, editorTab = 'edit';
@@ -152,7 +153,7 @@ function renderHeader() {
   $('#canvas-caption').textContent = task.status === 'done' ? '让每一份完成，都留下值得复用的经验' : '每一个想法，都有自己的位置';
 }
 function renderCard(node) {
-  const type = TYPES[node.type], task = activeTask();
+  const type = cardType(node), task = activeTask();
   let body = '', footer = '', extra = '';
   if (node.type === 'markdown') {
     body = '<div class="markdown">' + (node.content ? markdown(node.content) : '<p class="node-text-empty">双击，开始写下你的内容…</p>') + '</div>';
@@ -178,9 +179,14 @@ function renderCard(node) {
     const url = safeURL(node.url || '');
     let label = '添加一个参考链接';
     if (url) { try { label = new URL(url).hostname || url; } catch {} }
-    body = node.localFolder ? '<button class="link-preview" data-folder>' + icon('folder') + '<span>打开本地数据文件夹</span>' + icon('arrowUpRight') + '</button>' : '<a class="link-preview" ' + (url ? 'href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' : 'data-edit="' + node.id + '"') + '>' + icon('link') + '<span>' + esc(label) + '</span>' + icon('arrowUpRight') + '</a>';
+    body = '<a class="link-preview" ' + (url ? 'href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"' : 'data-edit="' + node.id + '"') + '>' + icon('link') + '<span>' + esc(label) + '</span>' + icon('arrowUpRight') + '</a>';
+    if (node.localFolder) {
+      const folderLabel = node.folderPath === undefined ? '打开本地数据文件夹' : node.folderPath.trim() ? '打开文件夹' : '填写文件夹路径';
+      body = '<button class="link-preview" data-folder="' + node.id + '">' + icon('folder') + '<span>' + folderLabel + '</span>' + icon('arrowUpRight') + '</button>';
+      if (node.folderPath !== undefined) body += '<p class="folder-path" title="' + esc(node.folderPath) + '">' + esc(node.folderPath || '尚未设置路径') + '</p>';
+    }
     body += '<p class="link-description">' + esc(node.content || '参考资料，随手可得。') + '</p>';
-    footer = '<span>' + (node.localFolder ? '本机资料' : '参考链接') + '</span>' + icon('link');
+    footer = '<span>' + (node.localFolder ? '本机文件夹' : '参考链接') + '</span>' + (node.localFolder ? '<button data-edit="' + node.id + '">' + icon('edit') + '编辑路径</button>' : icon('link'));
   }
   return '<article class="node node-' + node.type + extra + (selected === node.id ? ' selected' : '') + '" data-id="' + node.id + '" style="left:' + node.x + 'px;top:' + node.y + 'px;width:' + node.width + 'px" tabindex="0" aria-label="' + esc(type[0] + '：' + node.title) + '">' +
     '<div class="node-header"><span class="node-type-icon">' + icon(type[1]) + '</span><span class="node-title">' + esc(node.title || type[0]) + '</span><button class="node-more" data-node-menu="' + node.id + '" aria-label="卡片菜单">' + icon('more') + '</button></div>' +
@@ -239,6 +245,9 @@ function syncInspector() {
   const changed=($('#node-title-input')?.value!==node.title) ||
     ($('#node-content-input') && $('#node-content-input').value!==(node.content||'')) ||
     ($('#node-url-input') && $('#node-url-input').value!==(node.url||'')) ||
+    ($('#node-folder-input') && $('#node-folder-input').value!==(node.folderPath||'')) ||
+    (inspectorRendered?.localFolder!==node.localFolder) ||
+    (inspectorRendered?.folderPath!==node.folderPath) ||
     (editorTab==='preview' && inspectorRendered?.content!==node.content) ||
     (inspectorRendered?.assetId!==node.assetId) ||
     (node.type==='note' && $('.color-swatch.selected')?.dataset.color!==node.color) ||
@@ -265,7 +274,7 @@ function openEditor(id) {
 function renderInspector() {
   const node = activeNode(); if (!node) return closeInspector();
   inspectorRendered=structuredClone(node);
-  const type = TYPES[node.type];
+  const type = cardType(node);
   let editor = '<label class="field"><span>卡片标题</span><input id="node-title-input" value="' + esc(node.title) + '" maxlength="300"></label>';
   if (node.type === 'markdown') {
     editor += '<div class="editor-tabs"><button data-editor-tab="edit" class="' + (editorTab === 'edit' ? 'active' : '') + '">编辑</button><button data-editor-tab="preview" class="' + (editorTab === 'preview' ? 'active' : '') + '">预览</button></div>' +
@@ -276,7 +285,11 @@ function renderInspector() {
   } else {
     if (node.type === 'image' && node.assetId) editor += '<img class="editor-image" src="/api/files/' + node.assetId + '" alt="' + esc(node.title) + '" data-preview="' + node.id + '">';
     if (node.type === 'file') editor += '<div class="editor-file"><span class="file-ext">' + esc((node.fileName || '').split('.').at(-1).slice(0,5).toUpperCase()) + '</span><span class="file-info"><strong>' + esc(node.fileName || '附件') + '</strong><small>' + fileSize(node.size) + '</small></span></div>';
-    if (node.type === 'link' && !node.localFolder) editor += '<label class="field"><span>链接地址</span><input id="node-url-input" type="url" value="' + esc(node.url || '') + '" placeholder="https://…"></label>';
+    if (node.type === 'link') {
+      editor += '<label class="field"><span>链接类型</span><select id="node-link-kind"><option value="web"' + (!node.localFolder ? ' selected' : '') + '>网页链接</option><option value="folder"' + (node.localFolder ? ' selected' : '') + '>本地文件夹</option></select></label>';
+      if (node.localFolder) editor += '<label class="field"><span>文件夹路径</span><input id="node-folder-input" value="' + esc(node.folderPath || '') + '" placeholder="D:\\项目资料" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">' + (node.folderPath === undefined ? '当前打开工作台数据目录，填写路径后可改为指定文件夹。' : '填写本机完整文件夹路径。这里只保存引用，不复制文件夹内容。') + '</p><button class="subtle-button" data-folder="' + node.id + '">' + icon('folder') + '打开文件夹</button>';
+      else editor += '<label class="field"><span>链接地址</span><input id="node-url-input" type="url" value="' + esc(node.url || '') + '" placeholder="https://…"></label>';
+    }
     editor += '<label class="field"><span>' + (node.type === 'note' ? '便签内容' : '备注') + '</span><textarea id="node-content-input" rows="' + (node.type === 'note' ? 8 : 4) + '" placeholder="写下一点想法…">' + esc(node.content || '') + '</textarea></label>';
     if (node.type === 'note') editor += '<span class="field-label">便签颜色</span><div class="color-picker">' + ['yellow','blue','green','pink'].map((color,i) => '<button class="color-swatch ' + color + (node.color === color ? ' selected' : '') + '" data-color="' + color + '" aria-label="' + ['黄色','蓝色','绿色','粉色'][i] + '便签"></button>').join('') + '</div>';
     if (['image','file'].includes(node.type) && node.assetId) editor += '<a class="subtle-button" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载原文件</a>';
@@ -294,7 +307,7 @@ function addNode(type, position, overrides = {}, open = true) {
   const node = {id:uid(),type,title:names[type],content:'',width:310,...(position || canvas.newPosition()),...overrides};
   if (type === 'todo') node.items = [{id:uid(),text:'写下第一步行动',done:false}];
   if (type === 'note') { node.color ??= 'yellow'; node.width = 270; }
-  task.nodes.push(node); activity('添加' + TYPES[type][0] + '「' + node.title + '」'); markChanged();
+  task.nodes.push(node); activity('添加' + cardType(node)[0] + '「' + node.title + '」'); markChanged();
   selected = node.id; renderWorkspace(); if (open) openEditor(node.id);
   return node;
 }
@@ -426,8 +439,21 @@ async function exportBackup() {
     toast('备份已导出，包含文档和附件');
   } catch (error) {toast(error.message,{error:true});}
 }
-async function openFolder() {
-  try {await request('/api/open-folder',{method:'POST'});toast('已请求打开本机数据文件夹');}
+async function openFolder(cardId) {
+  try {
+    const options = {method:'POST'};
+    if (typeof cardId === 'string') {
+      const task = activeTask(), node = task?.nodes.find(node => node.id === cardId);
+      if (!node) throw new Error('文件夹卡片不存在');
+      if (node.folderPath !== undefined && !node.folderPath.trim()) {
+        openEditor(cardId); $('#node-folder-input')?.focus(); toast('请先填写文件夹路径',{error:true}); return;
+      }
+      options.headers = {'Content-Type':'application/json'};
+      options.body = JSON.stringify({taskId:task.id,cardId});
+      await flushSave();
+    }
+    await request('/api/open-folder',options); toast(typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
+  }
   catch(error){toast(error.message,{error:true});}
 }
 async function uploadFiles(files, point) {
@@ -504,6 +530,7 @@ $('#workspace-menu').onclick = () => popover($('#workspace-menu'),[
   {caption:'本地工作空间'},{label:'连接 AI · 本地 MCP',icon:'bolt',action:connectAI},{label:'打开数据文件夹',icon:'folder',action:openFolder},{label:'导出完整备份',icon:'download',action:exportBackup},null,{label:'使用帮助',icon:'help',action:help}
 ]);
 $$('[data-add]').forEach(button=>button.onclick=()=>addNode(button.dataset.add));
+$('#add-folder').onclick = () => { addNode('link',undefined,{title:'本地文件夹',localFolder:true,folderPath:''}); $('#node-folder-input')?.focus(); };
 $('#add-file').onclick = () => $('#file-input').click();
 $('#add-image').onclick = () => $('#image-input').click();
 [$('#file-input'),$('#image-input')].forEach(input=>input.onchange=()=>{uploadFiles([...input.files]);input.value='';});
@@ -521,7 +548,7 @@ document.addEventListener('click',event=>{
   if (find('[data-node-menu]')) return nodeMenu(find('[data-node-menu]'),find('[data-node-menu]').dataset.nodeMenu);
   if (find('[data-edit]')) {event.preventDefault();return openEditor(find('[data-edit]').dataset.edit);}
   if (find('[data-preview]')) return previewImage(find('[data-preview]').dataset.preview);
-  if (find('[data-folder]')) return openFolder();
+  if (find('[data-folder]')) return openFolder(find('[data-folder]').dataset.folder);
   if (card && connecting && !target.closest('a,button')) return finishConnection(card.dataset.id);
   if (find('.edge-group')) return edgeDialog(find('.edge-group').dataset.edge);
   if (find('[data-toggle]') && card) {
@@ -548,13 +575,23 @@ $('#inspector').addEventListener('input',event=>{
   if(event.target.id==='node-title-input')node.title=event.target.value;
   else if(event.target.id==='node-content-input')node.content=event.target.value;
   else if(event.target.id==='node-url-input')node.url=event.target.value;
+  else if(event.target.id==='node-folder-input')node.folderPath=event.target.value;
   else if(event.target.dataset.itemInput){const item=node.items.find(i=>i.id===event.target.dataset.itemInput);if(item)item.text=event.target.value;}
   else return;
   markChanged();refreshNode();
 });
 $('#inspector').addEventListener('compositionstart',()=>{composing=true;clearTimeout(saveTimer);});
 $('#inspector').addEventListener('compositionend',()=>{finishComposition();if(dirty)markChanged();});
-$('#inspector').addEventListener('change',event=>{if(event.target.id==='node-url-input'&&event.target.value&&!safeURL(event.target.value))toast('请填写以 http:// 或 https:// 开头的链接',{error:true});});
+$('#inspector').addEventListener('change',event=>{
+  if (event.target.id === 'node-link-kind') {
+    const node=activeNode(); if (!node || node.type!=='link') return;
+    node.localFolder=event.target.value==='folder';
+    if (node.localFolder) node.folderPath ??= '';
+    markChanged(); refreshNode(); renderInspector();
+    $(node.localFolder?'#node-folder-input':'#node-url-input')?.focus();
+  }
+  if(event.target.id==='node-url-input'&&event.target.value&&!safeURL(event.target.value))toast('请填写以 http:// 或 https:// 开头的链接',{error:true});
+});
 
 // Drag-and-drop and clipboard attachment capture.
 let dragDepth=0;

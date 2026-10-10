@@ -13,6 +13,7 @@ const cardFields = {
   title:text(500).min(1).optional().describe('卡片标题；仅更新时可省略'),
   content:text(200000).optional().describe('完整 Markdown 正文、便签内容或附件备注；省略则不修改'),
   url:z.string().max(5000).refine(value=>value==='' || /^https?:\/\//i.test(value),'链接只支持 http:// 或 https://').optional().describe('链接地址；仅 link 卡片可用'),
+  folder_path:text(32767).optional().describe('本机文件夹完整路径，仅 link 卡片可用，与 url 互斥；只保存引用，由用户在网页点击打开'),
   color:z.enum(['yellow','blue','green','pink']).optional().describe('便签颜色；仅 note 卡片可用'),
   items:z.array(z.object({id:id('已有待办项 ID；新项可省略').optional(),text:text(5000).describe('行动内容'),done:z.boolean().default(false).describe('是否完成')})).max(500).optional().describe('完整待办数组；覆盖整份清单，更新单项优先用 set_todo_item'),
   x:z.number().finite().optional().describe('画布横坐标；新建时省略可自动排列'),
@@ -78,8 +79,15 @@ function taskSummary(task) {
 function applyCardFields(card,args,files,taskId) {
   if (args.items !== undefined && card.type !== 'todo') throw new AppError('items 仅适用于待办卡片。');
   if (args.url !== undefined && card.type !== 'link') throw new AppError('url 仅适用于链接卡片。');
+  if (args.folder_path !== undefined && card.type !== 'link') throw new AppError('folder_path 仅适用于链接卡片。');
+  if (args.folder_path !== undefined && args.url !== undefined) throw new AppError('folder_path 与 url 不能同时填写。');
   if (args.color !== undefined && card.type !== 'note') throw new AppError('color 仅适用于便签。');
   for (const key of ['title','content','url','color','x','y','width']) if (args[key] !== undefined) card[key]=args[key];
+  if (args.folder_path !== undefined) {
+    card.localFolder=true; card.folderPath=args.folder_path; delete card.url;
+  } else if (args.url !== undefined) {
+    card.localFolder=false; delete card.folderPath;
+  }
   if (args.items !== undefined) {
     card.items=args.items.map(item=>({...item,id:item.id||randomUUID()}));
     if (new Set(card.items.map(i=>i.id)).size!==card.items.length) throw new AppError('待办项 ID 重复。');

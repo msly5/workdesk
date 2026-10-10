@@ -112,3 +112,18 @@ test('stdio 桥接同一个本地服务，输出符合协议且修改在 HTTP �
   assert.ok(resources.resources.some(r=>r.uri==='workdesk://tasks'));
   await bridge.close();
 });
+
+test('MCP 新建和修改本地文件夹引用，保存后网页可见，支持切回网页链接', async t => {
+  const {call,url,client} = await fixture(t);
+  const task_id = (await call('create_task',{title:'文件夹引用验收'})).task.id;
+  const folder = (await call('create_card',{task_id,type:'link',title:'工作资料',folder_path:'D:\\项目资料'})).card;
+  assert.equal(folder.localFolder,true); assert.equal(folder.folderPath,'D:\\项目资料');
+  await call('update_card',{task_id,card_id:folder.id,folder_path:'C:\\资料 中文 空格'});
+  const state = await (await fetch(url+'/api/state')).json();
+  assert.equal(state.tasks.find(task=>task.id===task_id).nodes[0].folderPath,'C:\\资料 中文 空格');
+  for(const args of [{task_id,type:'note',title:'错误类型',folder_path:'D:\\资料'},{task_id,type:'link',title:'地址冲突',folder_path:'D:\\资料',url:'https://example.com'}]) {
+    assert.equal((await client.callTool({name:'create_card',arguments:args})).isError,true);
+  }
+  const web = (await call('update_card',{task_id,card_id:folder.id,url:'https://example.com'})).card;
+  assert.equal(web.localFolder,false); assert.equal(web.folderPath,undefined); assert.equal(web.url,'https://example.com');
+});

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import childProcess from 'node:child_process';
@@ -113,4 +113,53 @@ test('收到系统启动确认后才返回打开请求成功', { skip: process.p
     assert.equal(returnedEarly, false, '系统启动尚未确认就返回了成功');
   } finally { calls[0].child.emit('spawn'); }
   assert.equal((await responsePromise).status, 200);
+});
+
+async function saveFolderCard(url, folderPath) {
+  const state = await (await fetch(url + '/api/state')).json();
+  const task = state.tasks[0];
+  const card = { id: 'custom-folder', type: 'link', title: '项目资料', localFolder: true, folderPath, content: '', x: 500, y: 400, width: 310 };
+  task.nodes = task.nodes.filter(node => node.id !== card.id); task.nodes.push(card);
+  const response = await fetch(url + '/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(state) });
+  assert.equal(response.status, 200);
+  return { taskId: task.id, cardId: card.id };
+}
+
+test('从已保存的文件夹卡片打开指定中文空格目录，兼容复制的引号且不执行命令', { skip: process.platform !== 'win32' }, async t => {
+  const { calls } = explorerStub(t);
+  const { url, dir } = await app(t);
+  const folder = path.join(dir, '资料 & 项目; 中文 空格'); await mkdir(folder);
+  const target = await saveFolderCard(url, ' "' + folder.replaceAll('\\', '/') + '" ');
+  const response = await fetch(url + '/api/open-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(target) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls[0].args, [folder]);
+  assert.ok(!calls[0].options.shell);
+  const forbidden = await fetch(url + '/api/open-folder', { method: 'POST', headers: { Origin: 'https://example.org', 'Content-Type': 'application/json' }, body: JSON.stringify(target) });
+  assert.equal(forbidden.status, 403); assert.equal(calls.length, 1);
+});
+
+test('文件夹路径为空、相对地址、协议、网络路径、普通文件或不存在时不启动 Explorer', { skip: process.platform !== 'win32' }, async t => {
+  const { calls } = explorerStub(t);
+  const { url, dir } = await app(t);
+  const file = path.join(dir, '普通文件.txt'); await writeFile(file, '不能作为程序打开');
+  for (const [value, status] of [['',400],['relative',400],['https://example.org',400],['shell:AppsFolder',400],['\\\\server\\share',400],['\\\\?\\C:\\',400],[file,400],[path.join(dir,'不存在'),404]]) {
+    const target = await saveFolderCard(url, value);
+    const response = await fetch(url + '/api/open-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(target) });
+    assert.equal(response.status, status, value);
+    assert.match((await response.json()).error, /文件夹|路径|目录/);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('打开自定义目录必须使用存在的文件夹卡片，旧数据目录卡片仍能打开', { skip: process.platform !== 'win32' }, async t => {
+  const { calls } = explorerStub(t);
+  const { url, dir } = await app(t);
+  const state = await (await fetch(url + '/api/state')).json(); const task = state.tasks[0];
+  const post = target => fetch(url + '/api/open-folder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(target) });
+  assert.equal((await post({taskId:task.id,cardId:'missing'})).status, 404);
+  assert.equal((await post({taskId:task.id,cardId:task.nodes.find(node=>node.type==='markdown').id})).status, 400);
+  assert.equal(calls.length, 0);
+  const legacy = task.nodes.find(node=>node.localFolder);
+  assert.equal((await post({taskId:task.id,cardId:legacy.id})).status, 200);
+  assert.deepEqual(calls[0].args, [dir]);
 });

@@ -48,6 +48,20 @@ test('校验非法标识，拒绝越界文件路径', async t => {
   await assert.rejects(store.save(state), /标识/);
 });
 
+test('文件夹引用字段拒绝错误类型，路径和备注重启后保留', async t => {
+  const {store,dir} = await storage(t);
+  const base = await store.read();
+  const card = base.tasks[0].nodes.find(node=>node.localFolder);
+  for(const field of [{folderPath:{}},{localFolder:'yes'}]) {
+    const invalid = structuredClone(base); Object.assign(invalid.tasks[0].nodes.find(node=>node.id===card.id),field);
+    await assert.rejects(store.save(invalid), /文件夹|内容格式/);
+  }
+  card.folderPath='D:\\项目资料 中文'; card.content='常用工作目录'; await store.save(base);
+  const {Store}=await import('../storage.mjs'); const reopened=new Store(dir); await reopened.init();
+  const saved=(await reopened.read()).tasks[0].nodes.find(node=>node.id===card.id);
+  assert.equal(saved.folderPath,card.folderPath); assert.equal(saved.content,card.content);
+});
+
 test('附件保存原始字节，备份包含附件', async t => {
   const { store } = await storage(t);
   const state = await store.read();

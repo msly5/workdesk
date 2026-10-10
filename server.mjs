@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -22,6 +22,24 @@ async function body(req, limit) {
 function json(res, status, value) {
   res.writeHead(status, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store' });
   res.end(JSON.stringify(value));
+}
+async function localFolderPath(value) {
+  let folder = value.trim();
+  if (folder.startsWith('"') && folder.endsWith('"')) folder = folder.slice(1, -1).trim();
+  if (!folder) throw new AppError('请先填写文件夹的完整路径。');
+  if (!/^[a-z]:[\\/]/i.test(folder) || /[\u0000-\u001f<>:"|?*]/.test(folder.slice(2))) {
+    throw new AppError('请填写本机完整文件夹路径，例如 D:\\项目资料。');
+  }
+  folder = path.win32.normalize(folder);
+  let info;
+  try { info = await stat(folder); }
+  catch (error) {
+    if (error.code === 'ENOENT') throw new AppError('文件夹不存在：' + folder, 404);
+    if (error.code === 'ENOTDIR') throw new AppError('路径不是文件夹：' + folder);
+    throw new AppError('无法访问文件夹，请检查路径和权限：' + folder, 403);
+  }
+  if (!info.isDirectory()) throw new AppError('该路径是文件，请填写文件夹路径：' + folder);
+  return folder;
 }
 export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
   const store = new Store(dataDir); await store.init();
@@ -69,16 +87,31 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       if (route === '/api/backup' && req.method === 'GET') return json(res, 200, await store.export());
       if (route === '/api/open-folder' && req.method === 'POST') {
         if (process.platform !== 'win32') throw new AppError('数据目录：' + store.dir);
+        const bytes = await body(req, 4096);
+        let target = {};
+        try { if (bytes.length) target = JSON.parse(bytes.toString('utf8')); }
+        catch { throw new AppError('无法识别文件夹请求。'); }
+        if (!target || typeof target !== 'object' || Array.isArray(target)) throw new AppError('文件夹请求格式无效。');
+        let folder = store.dir;
+        if (target.taskId !== undefined || target.cardId !== undefined) {
+          if (typeof target.taskId !== 'string' || typeof target.cardId !== 'string') throw new AppError('请指定文件夹卡片。');
+          const state = await store.read();
+          const card = state.tasks.find(task => task.id === target.taskId)?.nodes.find(node => node.id === target.cardId);
+          if (!card) throw new AppError('文件夹卡片不存在。', 404);
+          if (card.type !== 'link' || card.localFolder !== true) throw new AppError('该卡片不是本地文件夹。');
+          // Legacy folder cards without a path continue to open the data folder.
+          if (card.folderPath !== undefined) folder = await localFolderPath(card.folderPath);
+        }
         try {
           await new Promise((resolve, reject) => {
-            const explorer = spawn('explorer.exe', [store.dir], { windowsHide:false, detached:true, stdio:'ignore' });
+            const explorer = spawn('explorer.exe', [folder], { windowsHide:false, detached:true, stdio:'ignore' });
             explorer.once('error', reject);
             // Explorer may hand the request to an existing desktop process.
             // Confirm process creation instead of waiting for its exit code.
             explorer.once('spawn', () => { explorer.unref(); resolve(); });
           });
         } catch {
-          throw new AppError('无法启动资源管理器，请手动打开数据文件夹：' + store.dir, 500);
+          throw new AppError('无法启动资源管理器，请手动打开文件夹：' + folder, 500);
         }
         return json(res, 200, { ok:true });
       }
