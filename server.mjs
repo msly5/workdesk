@@ -2,7 +2,7 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { Store, AppError } from './storage.mjs';
 import { WorkdeskService } from './workdesk-service.mjs';
 import { handleMcp } from './mcp.mjs';
@@ -69,7 +69,17 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       if (route === '/api/backup' && req.method === 'GET') return json(res, 200, await store.export());
       if (route === '/api/open-folder' && req.method === 'POST') {
         if (process.platform !== 'win32') throw new AppError('数据目录：' + store.dir);
-        execFile('explorer.exe', [store.dir], { windowsHide:true }, () => {});
+        try {
+          await new Promise((resolve, reject) => {
+            const explorer = spawn('explorer.exe', [store.dir], { windowsHide:false, detached:true, stdio:'ignore' });
+            explorer.once('error', reject);
+            // Explorer may hand the request to an existing desktop process.
+            // Confirm process creation instead of waiting for its exit code.
+            explorer.once('spawn', () => { explorer.unref(); resolve(); });
+          });
+        } catch {
+          throw new AppError('无法启动资源管理器，请手动打开数据文件夹：' + store.dir, 500);
+        }
         return json(res, 200, { ok:true });
       }
       const file = route === '/' ? 'index.html' : route.slice(1);

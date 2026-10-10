@@ -427,7 +427,7 @@ async function exportBackup() {
   } catch (error) {toast(error.message,{error:true});}
 }
 async function openFolder() {
-  try {await request('/api/open-folder',{method:'POST'});toast('已打开本机数据文件夹');}
+  try {await request('/api/open-folder',{method:'POST'});toast('已请求打开本机数据文件夹');}
   catch(error){toast(error.message,{error:true});}
 }
 async function uploadFiles(files, point) {
