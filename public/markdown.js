@@ -1,3 +1,5 @@
+import {t} from './i18n.js';
+
 export function escapeHTML(text = '') {
   return String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -102,7 +104,7 @@ export function markdown(source = '') {
     const table = !blockStart(line) && tableHeader(line, lines[index + 1]);
     if (table) {
       flush(); closeList();
-      let html = '<div class="md-table-scroll" tabindex="0" role="region" aria-label="Markdown 表格"><table><thead>' + tableCells(table.cells, table.align, 'th') + '</thead><tbody>';
+      let html = '<div class="md-table-scroll" tabindex="0" role="region" aria-label="' + escapeHTML(t('Markdown 表格')) + '"><table><thead>' + tableCells(table.cells, table.align, 'th') + '</thead><tbody>';
       index++;
       while (index + 1 < lines.length && lines[index + 1].trim() && !blockStart(lines[index + 1])) {
         const row = tableRow(lines[index + 1]);

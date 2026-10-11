@@ -6,7 +6,9 @@ A local-first task workspace for people and AI agents. Give each task its own ca
 
 Workdesk runs as a local Node.js service with a browser interface. It does not include a model or require a Workdesk account.
 
-Screenshots show Workdesk running locally with fictional English sample content. The interface is currently in Simplified Chinese.
+The interface supports **English and Simplified Chinese**, including buttons, menus, dialogs, help and status messages. It follows your browser language on first visit; use the language selector at the bottom of the sidebar to change it. Your choice is remembered in this browser. Switching languages preserves your task and document content.
+
+Screenshots show English mode with fictional sample content.
 
 ![Workdesk task canvas with documents, to-dos and reference materials](docs/screenshots/canvas-overview.jpg)
 

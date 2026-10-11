@@ -1,72 +1,75 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#7367df">
-  <title>本地工作台</title>
-  <meta name="description" content="每件工作一张桌面。用独立画布整理任务、文档、截图和附件，所有内容保存在本机。">
+  <title data-i18n="本地工作台">Workdesk</title>
+  <meta name="description" content="A local desk for every task. Organize tasks, documents, screenshots, and attachments on separate canvases, with workspace data saved on this computer." data-i18n-content="每件工作一张桌面。用独立画布整理任务、文档、截图和附件，所有内容保存在本机。">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="/markdown.css">
   <link rel="stylesheet" href="/canvas-interaction.css">
   <link rel="stylesheet" href="/inspector.css">
+  <link rel="stylesheet" href="/i18n.css">
+  <script src="/i18n.js" type="module"></script>
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
-    <a class="brand" href="/" aria-label="本地工作台首页"><img src="/favicon.svg" alt=""><span>本地工作台</span></a>
-    <div class="workspace-label"><span class="workspace-avatar">我</span><span>我的工作空间<small>一人，也井然有序</small></span></div>
-    <button class="primary new-task" id="new-task"><span data-icon="plus"></span>新建任务<span class="shortcut">N</span></button>
-    <label class="search"><span data-icon="search"></span><input id="task-search" placeholder="搜索任务或卡片…" aria-label="搜索任务或卡片"><kbd>/</kbd></label>
-    <nav class="filters" aria-label="任务筛选">
-      <button class="filter active" data-filter="all"><span data-icon="layers"></span>全部任务<span class="count"></span></button>
-      <button class="filter" data-filter="active"><span data-icon="circle"></span>进行中<span class="count"></span></button>
-      <button class="filter" data-filter="done"><span data-icon="checkCircle"></span>已完成<span class="count"></span></button>
+    <a class="brand" href="/" aria-label="Workdesk home" data-i18n-aria-label="本地工作台首页"><img src="/favicon.svg" alt=""><span data-i18n="本地工作台">Workdesk</span></a>
+    <div class="workspace-label"><span class="workspace-avatar" data-i18n="我">ME</span><span><span data-i18n="我的工作空间">My workspace</span><small data-i18n="一人，也井然有序">Your space, organized</small></span></div>
+    <button class="primary new-task" id="new-task"><span data-icon="plus"></span><span data-i18n="新建任务">New task</span><span class="shortcut">N</span></button>
+    <label class="search"><span data-icon="search"></span><input id="task-search" placeholder="Search tasks or cards…" data-i18n-placeholder="搜索任务或卡片…" aria-label="Search tasks or cards" data-i18n-aria-label="搜索任务或卡片"><kbd>/</kbd></label>
+    <nav class="filters" aria-label="Filter tasks" data-i18n-aria-label="任务筛选">
+      <button class="filter active" data-filter="all"><span data-icon="layers"></span><span data-i18n="全部任务">All tasks</span><span class="count"></span></button>
+      <button class="filter" data-filter="active"><span data-icon="circle"></span><span data-i18n="进行中">In progress</span><span class="count"></span></button>
+      <button class="filter" data-filter="done"><span data-icon="checkCircle"></span><span data-i18n="已完成">Completed</span><span class="count"></span></button>
     </nav>
     <div class="sidebar-divider"></div>
-    <div class="section-label"><span id="task-list-label">我的任务</span><button class="icon-button tiny" id="new-task-small" aria-label="添加任务"><span data-icon="plus"></span></button></div>
+    <div class="section-label"><span id="task-list-label"><span data-i18n="我的任务">My tasks</span></span><button class="icon-button tiny" id="new-task-small" aria-label="Add task" data-i18n-aria-label="添加任务"><span data-icon="plus"></span></button></div>
     <div id="task-list" class="task-list"></div>
     <div class="sidebar-bottom">
-      <button class="archive-filter" data-filter="archived"><span data-icon="archive"></span>归档任务<span id="archived-count"></span></button>
-      <div class="storage-note"><span class="local-indicator"></span><span>内容保存在本机</span><span data-icon="folder"></span></div>
-      <button class="profile" id="workspace-menu"><span class="profile-avatar">Q</span><span>我的工作台<small>给工作留一点秩序</small></span><span data-icon="more"></span></button>
+      <div class="language-picker"><label for="language-select" data-i18n="语言">Language</label><select id="language-select" aria-label="Interface language" data-i18n-aria-label="界面语言"><option value="en" data-i18n="英语">English</option><option value="zh-CN" data-i18n="简体中文">Simplified Chinese</option></select></div>
+      <button class="archive-filter" data-filter="archived"><span data-icon="archive"></span><span data-i18n="归档任务">Archived tasks</span><span id="archived-count"></span></button>
+      <div class="storage-note"><span class="local-indicator"></span><span data-i18n="内容保存在本机">Saved on this computer</span><span data-icon="folder"></span></div>
+      <button class="profile" id="workspace-menu"><span class="profile-avatar" data-i18n="我">ME</span><span><span data-i18n="我的工作台">My desk</span><small data-i18n="给工作留一点秩序">Make room for focused work</small></span><span data-icon="more"></span></button>
     </div>
   </aside>
   <main class="main">
     <header class="topbar">
-      <div class="breadcrumb"><button class="icon-button mobile-menu" id="mobile-menu" aria-label="打开任务列表"><span data-icon="menu"></span></button><span data-icon="folder"></span><span>我的工作空间</span><span data-icon="chevron"></span><span id="breadcrumb-title">正在载入</span></div>
-      <div class="topbar-actions"><button id="mcp-button" class="mcp-button" title="让智能体连接本地工作台"><span data-icon="bolt"></span><span>连接 AI</span></button><button id="save-status" class="save-status" title="自动保存状态"><span data-icon="checkCircle"></span><span>连接本地工作台…</span></button><span class="topbar-separator"></span><button class="icon-button" id="history-button" title="任务动态" aria-label="任务动态"><span data-icon="history"></span></button><button class="icon-button" id="help-button" title="使用帮助" aria-label="使用帮助"><span data-icon="help"></span></button></div>
+      <div class="breadcrumb"><button class="icon-button mobile-menu" id="mobile-menu" aria-label="Open task list" data-i18n-aria-label="打开任务列表"><span data-icon="menu"></span></button><span data-icon="folder"></span><span data-i18n="我的工作空间">My workspace</span><span data-icon="chevron"></span><span id="breadcrumb-title"><span data-i18n="正在载入">Loading</span></span></div>
+      <div class="topbar-actions"><button id="mcp-button" class="mcp-button" title="Connect an AI agent to Workdesk" data-i18n-title="让智能体连接本地工作台"><span data-icon="bolt"></span><span data-i18n="连接 AI">Connect AI</span></button><button id="save-status" class="save-status" title="Autosave status" data-i18n-title="自动保存状态"><span data-icon="checkCircle"></span><span data-i18n="连接本地工作台…">Connecting to Workdesk…</span></button><span class="topbar-separator"></span><button class="icon-button" id="history-button" title="Task activity" data-i18n-title="任务动态" aria-label="Task activity" data-i18n-aria-label="任务动态"><span data-icon="history"></span></button><button class="icon-button" id="help-button" title="Help" data-i18n-title="使用帮助" aria-label="Help" data-i18n-aria-label="使用帮助"><span data-icon="help"></span></button></div>
     </header>
     <section class="task-header" id="task-header">
-      <div class="task-heading"><div class="title-block"><div class="title-row"><h1 id="task-title">正在打开工作空间</h1><button id="task-status" class="status-pill"><span></span>进行中</button></div><div class="task-eyebrow"><span id="task-tag">工作区</span><span class="eyebrow-dot">·</span><span id="card-count">0 张卡片</span></div></div><div class="task-heading-actions"><button class="details-toggle" id="toggle-task-details" aria-expanded="false" aria-controls="task-goal" title="展开任务说明"><span data-icon="chevron"></span><span>说明</span></button><button class="subtle-button" id="edit-task"><span data-icon="edit"></span>编辑任务</button><button class="icon-button" id="task-menu" aria-label="任务菜单"><span data-icon="more"></span></button></div></div>
+      <div class="task-heading"><div class="title-block"><div class="title-row"><h1 id="task-title"><span data-i18n="正在打开工作空间">Opening your workspace</span></h1><button id="task-status" class="status-pill"><span></span><span data-i18n="进行中">In progress</span></button></div><div class="task-eyebrow"><span id="task-tag"><span data-i18n="工作区">Workspace</span></span><span class="eyebrow-dot">·</span><span id="card-count"><span data-i18n="0 张卡片">0 cards</span></span></div></div><div class="task-heading-actions"><button class="details-toggle" id="toggle-task-details" aria-expanded="false" aria-controls="task-goal" title="Show task details" data-i18n-title="展开任务说明"><span data-icon="chevron"></span><span data-i18n="说明">Details</span></button><button class="subtle-button" id="edit-task"><span data-icon="edit"></span><span data-i18n="编辑任务">Edit task</span></button><button class="icon-button" id="task-menu" aria-label="Task menu" data-i18n-aria-label="任务菜单"><span data-icon="more"></span></button></div></div>
       <p id="task-goal" class="task-goal hidden"></p>
-      <div class="workbar"><button class="next-action" id="next-action"><span class="next-action-icon" data-icon="bolt"></span><span class="next-action-label">下一步</span><span id="next-action-text">写下一个可以开始的小行动</span><span class="next-action-edit" data-icon="edit"></span></button><div class="view-toggle" role="group" aria-label="切换视图"><button class="active" id="canvas-view"><span data-icon="grid"></span>画布</button><button id="list-view"><span data-icon="list"></span>列表</button></div></div>
+      <div class="workbar"><button class="next-action" id="next-action"><span class="next-action-icon" data-icon="bolt"></span><span class="next-action-label" data-i18n="下一步">Next step</span><span id="next-action-text"><span data-i18n="写下一个可以开始的小行动">Write down one small next step</span></span><span class="next-action-edit" data-icon="edit"></span></button><div class="view-toggle" role="group" aria-label="Switch view" data-i18n-aria-label="切换视图"><button class="active" id="canvas-view"><span data-icon="grid"></span><span data-i18n="画布">Canvas</span></button><button id="list-view"><span data-icon="list"></span><span data-i18n="列表">List</span></button></div></div>
     </section>
-    <section class="workspace" id="workspace" aria-label="任务画布">
+    <section class="workspace" id="workspace" aria-label="Task canvas" data-i18n-aria-label="任务画布">
       <div class="canvas" id="canvas"><div id="canvas-world" class="canvas-world"><svg id="edges" class="edges" xmlns="http://www.w3.org/2000/svg"><defs><marker id="edge-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#b0b4c8" stroke-width="1.1"/></marker></defs><g id="edge-paths"></g></svg><div id="nodes"></div></div></div>
-      <div class="canvas-caption"><span class="canvas-caption-icon" data-icon="layers"></span><span id="canvas-caption">每一个想法，都有自己的位置</span></div>
-      <div class="empty-state hidden" id="empty-state"><div class="empty-icon"><span data-icon="layers"></span></div><h2>一张空白桌面，一个新的开始</h2><p>放下一个待办、一段想法，或者直接拖入文件。</p><button class="primary" id="empty-add"><span data-icon="plus"></span>添加第一张卡片</button><small>截图也可以直接粘贴到这里</small></div>
+      <div class="canvas-caption"><span class="canvas-caption-icon" data-icon="layers"></span><span id="canvas-caption"><span data-i18n="每一个想法，都有自己的位置">A place for every idea</span></span></div>
+      <div class="empty-state hidden" id="empty-state"><div class="empty-icon"><span data-icon="layers"></span></div><h2 data-i18n="一张空白桌面，一个新的开始">A clear desk. A fresh start.</h2><p data-i18n="放下一个待办、一段想法，或者直接拖入文件。">Add a task, capture an idea, or drop a file here.</p><button class="primary" id="empty-add"><span data-icon="plus"></span><span data-i18n="添加第一张卡片">Add your first card</span></button><small data-i18n="截图也可以直接粘贴到这里">You can paste screenshots here, too</small></div>
       <div class="list-surface hidden" id="list-surface"></div>
-      <div class="canvas-hint" id="canvas-hint">拖动空白处平移<span>·</span>双击卡片编辑<span>·</span>Ctrl + 滚轮缩放</div>
+      <div class="canvas-hint" id="canvas-hint"><span data-i18n="拖动空白处平移">Drag empty space to pan</span><span>·</span><span data-i18n="双击卡片编辑">Double-click a card to edit</span><span>·</span><span data-i18n="Ctrl + 滚轮缩放">Ctrl + scroll to zoom</span></div>
       <div class="floating-tools" id="floating-tools">
-        <div class="add-toolbar" role="toolbar" aria-label="添加卡片">
-          <button class="tool-button" data-add="todo" title="添加待办"><span class="tool-icon todo-icon" data-icon="todo"></span><span>待办</span></button>
-          <button class="tool-button" data-add="markdown" title="添加 Markdown 文档"><span class="tool-icon md-icon" data-icon="markdown"></span><span>文档</span></button>
-          <button class="tool-button" data-add="note" title="添加便签"><span class="tool-icon note-icon" data-icon="note"></span><span>便签</span></button>
+        <div class="add-toolbar" role="toolbar" aria-label="Add card" data-i18n-aria-label="添加卡片">
+          <button class="tool-button" data-add="todo" title="Add a to-do list" data-i18n-title="添加待办"><span class="tool-icon todo-icon" data-icon="todo"></span><span data-i18n="待办">To-do</span></button>
+          <button class="tool-button" data-add="markdown" title="Add a Markdown document" data-i18n-title="添加 Markdown 文档"><span class="tool-icon md-icon" data-icon="markdown"></span><span data-i18n="文档">Document</span></button>
+          <button class="tool-button" data-add="note" title="Add a note" data-i18n-title="添加便签"><span class="tool-icon note-icon" data-icon="note"></span><span data-i18n="便签">Note</span></button>
           <span class="toolbar-separator"></span>
-          <button class="tool-button" data-add="link" title="添加链接"><span class="tool-icon link-icon" data-icon="link"></span><span>链接</span></button>
-          <button class="tool-button" id="add-folder" title="添加本地文件夹"><span class="tool-icon link-icon" data-icon="folder"></span><span>文件夹</span></button>
-          <button class="tool-button" id="add-image" title="添加图片或截图"><span class="tool-icon image-icon" data-icon="image"></span><span>图片</span></button>
-          <button class="tool-button" id="add-file" title="添加附件"><span class="tool-icon file-icon" data-icon="upload"></span><span>附件</span></button>
+          <button class="tool-button" data-add="link" title="Add a link" data-i18n-title="添加链接"><span class="tool-icon link-icon" data-icon="link"></span><span data-i18n="链接">Link</span></button>
+          <button class="tool-button" id="add-folder" title="Add a local folder" data-i18n-title="添加本地文件夹"><span class="tool-icon link-icon" data-icon="folder"></span><span data-i18n="文件夹">Folder</span></button>
+          <button class="tool-button" id="add-image" title="Add an image or screenshot" data-i18n-title="添加图片或截图"><span class="tool-icon image-icon" data-icon="image"></span><span data-i18n="图片">Image</span></button>
+          <button class="tool-button" id="add-file" title="Add an attachment" data-i18n-title="添加附件"><span class="tool-icon file-icon" data-icon="upload"></span><span data-i18n="附件">Attachment</span></button>
         </div>
       </div>
-      <div class="zoom-toolbar"><button class="icon-button" id="zoom-out" title="缩小" aria-label="缩小"><span data-icon="zoomOut"></span></button><button id="zoom-value" class="zoom-value" title="还原至 100%">100%</button><button class="icon-button" id="zoom-in" title="放大" aria-label="放大"><span data-icon="zoomIn"></span></button><span></span><button class="icon-button" id="fit-content" title="适应内容" aria-label="适应内容"><span data-icon="fit"></span></button></div>
-      <div class="drop-overlay hidden" id="drop-overlay"><span data-icon="upload"></span><strong>松手，放进当前工作区</strong><span>图片、文档和附件，都可以留在这里</span></div>
-      <div class="connection-banner hidden" id="connection-banner"><span data-icon="link"></span>点击目标卡片，建立关联<button id="cancel-connection">取消 Esc</button></div>
+      <div class="zoom-toolbar"><button class="icon-button" id="zoom-out" title="Zoom out" data-i18n-title="缩小" aria-label="Zoom out" data-i18n-aria-label="缩小"><span data-icon="zoomOut"></span></button><button id="zoom-value" class="zoom-value" title="Reset to 100%" data-i18n-title="还原至 100%">100%</button><button class="icon-button" id="zoom-in" title="Zoom in" data-i18n-title="放大" aria-label="Zoom in" data-i18n-aria-label="放大"><span data-icon="zoomIn"></span></button><span></span><button class="icon-button" id="fit-content" title="Fit content" data-i18n-title="适应内容" aria-label="Fit content" data-i18n-aria-label="适应内容"><span data-icon="fit"></span></button></div>
+      <div class="drop-overlay hidden" id="drop-overlay"><span data-icon="upload"></span><strong data-i18n="松手，放进当前工作区">Drop into this workspace</strong><span data-i18n="图片、文档和附件，都可以留在这里">Keep images, documents, and attachments together</span></div>
+      <div class="connection-banner hidden" id="connection-banner"><span data-icon="link"></span><span data-i18n="点击目标卡片，建立关联">Click another card to connect it</span><button id="cancel-connection" data-i18n="取消 Esc">Cancel · Esc</button></div>
     </section>
   </main>
-  <aside class="inspector hidden" id="inspector" aria-label="卡片编辑器"></aside>
-  <div class="inspector-resize" id="inspector-resize" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="inspector" title="拖动调整宽度，双击恢复默认；也可用左右方向键"></div>
+  <aside class="inspector hidden" id="inspector" aria-label="Card editor" data-i18n-aria-label="卡片编辑器"></aside>
+  <div class="inspector-resize" id="inspector-resize" role="separator" tabindex="0" aria-label="Resize the right sidebar" data-i18n-aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="inspector" title="Drag to resize, double-click to reset, or use the left and right arrow keys" data-i18n-title="拖动调整宽度，双击恢复默认；也可用左右方向键"></div>
   <div class="toast-container" id="toasts" aria-live="polite"></div>
   <div class="popover hidden" id="popover"></div>
   <dialog id="modal"><div id="modal-content"></div></dialog>

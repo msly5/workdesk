@@ -1,3 +1,5 @@
+import {t,formatNumber} from './i18n.js';
+
 const STORAGE_KEY = 'workdesk.inspectorWidth';
 const DEFAULT_WIDTH = 420;
 
@@ -13,6 +15,8 @@ export function clampInspectorWidth(width, bounds) {
 
 export function initInspectorResize() {
   const handle = document.querySelector('#inspector-resize');
+  handle.setAttribute('aria-label',t('调整右侧栏宽度'));
+  handle.title=t('拖动调整宽度，双击恢复默认；也可用左右方向键');
   const root = document.documentElement;
   let preferred = DEFAULT_WIDTH, drag = null;
   try {
@@ -27,6 +31,7 @@ export function initInspectorResize() {
     handle.setAttribute('aria-valuemin', limits.min);
     handle.setAttribute('aria-valuemax', limits.max);
     handle.setAttribute('aria-valuenow', width);
+    handle.setAttribute('aria-valuetext', t('{width} 像素',{width:formatNumber(width)}));
     return width;
   };
   const remember = () => { try { localStorage.setItem(STORAGE_KEY, String(preferred)); } catch {} };

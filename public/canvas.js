@@ -1,3 +1,5 @@
+import {t,formatNumber} from './i18n.js';
+
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable]:not([contenteditable="false"]),.edge-group';
 
 export class Canvas {
@@ -59,7 +61,7 @@ export class Canvas {
     this.world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.zoom + ')';
     this.el.parentElement.style.backgroundPosition = view.x + 'px ' + view.y + 'px';
     this.el.parentElement.style.backgroundSize = 20 * view.zoom + 'px ' + 20 * view.zoom + 'px';
-    document.querySelector('#zoom-value').textContent = Math.round(view.zoom * 100) + '%';
+    document.querySelector('#zoom-value').textContent = formatNumber(view.zoom,{style:'percent',maximumFractionDigits:0});
   }
   renderEdges() {
     const task = this.getTask();
@@ -75,7 +77,8 @@ export class Canvas {
       const curve = Math.max(35, Math.abs(x2 - x1) * .48), direction = x2 >= x1 ? 1 : -1;
       const d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + curve * direction) + ' ' + y1 + ', ' + (x2 - curve * direction) + ' ' + y2 + ', ' + x2 + ' ' + y2;
       const label = this.escape(edge.label || '');
-      return '<g class="edge-group" data-edge="' + edge.id + '"><path class="edge-hit" d="' + d + '"/><path class="edge-path" d="' + d + '"/>' + (label ? '<text class="edge-label" x="' + ((x1 + x2) / 2) + '" y="' + ((y1 + y2) / 2 - 10) + '" text-anchor="middle">' + label + '</text>' : '') + '</g>';
+      const description=label || this.escape(t('点击编辑卡片关联'));
+      return '<g class="edge-group" data-edge="' + edge.id + '" aria-label="' + this.escape(t('卡片关联')) + '"><title>'+description+'</title><path class="edge-hit" d="' + d + '"/><path class="edge-path" d="' + d + '"/>' + (label ? '<text class="edge-label" x="' + ((x1 + x2) / 2) + '" y="' + ((y1 + y2) / 2 - 10) + '" text-anchor="middle">' + label + '</text>' : '') + '</g>';
     }).join('');
   }
   pointerDown(event) {

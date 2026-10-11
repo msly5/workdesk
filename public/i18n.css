@@ -1,0 +1,18 @@
+.language-picker { display:flex; align-items:center; gap:8px; padding:10px 8px; color:var(--muted); font-size:11px; }
+.language-picker label { flex:0 0 auto; }
+.language-picker select { min-width:0; width:100%; border:1px solid var(--line); border-radius:7px; padding:6px 24px 6px 8px; background:#fff; color:var(--ink); font:inherit; cursor:pointer; }
+.language-picker select:focus-visible { outline:2px solid var(--purple); outline-offset:2px; }
+.status-pill > [data-i18n] { width:auto; height:auto; background:none; border-radius:0; }
+.canvas-hint > [data-i18n] { color:inherit; }
+html[lang="en"] .workspace-avatar, html[lang="en"] .profile-avatar { font-size:11px; }
+html[lang="en"] .canvas-hint { font-size:10px; }
+html[lang="en"] .tool-button { width:auto; min-width:48px; padding-inline:6px; white-space:nowrap; }
+@container (max-width:850px) {
+  html[lang="en"] .zoom-toolbar { bottom:108px; right:16px; }
+  html[lang="en"] .canvas-hint { display:none; }
+}
+@media (max-width:600px) {
+  html[lang="en"] .floating-tools { width:max-content; max-width:calc(100% - 16px); }
+  html[lang="en"] .add-toolbar { flex-wrap:wrap; justify-content:center; }
+  html[lang="en"] .tool-button { min-width:38px; padding-inline:4px; font-size:10px; }
+}

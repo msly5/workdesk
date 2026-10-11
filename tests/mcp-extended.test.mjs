@@ -26,6 +26,27 @@ async function fixture(t) {
   return {client,call,raw,task_id,url,dir};
 }
 
+test('MCP defaults leave task categories localizable and add an English copy suffix without rewriting user text',async t=>{
+  const {call,task_id}=await fixture(t);
+  assert.equal((await call('get_task',{task_id})).task.tag,'');
+  const explicit=(await call('create_task',{title:'用户任务',tag:'用户分类'})).task;
+  assert.equal(explicit.tag,'用户分类');
+  const source=(await call('create_card',{task_id,type:'note',title:'用户标题'})).card;
+  const longTitle='A'.repeat(500);
+  const long=(await call('create_card',{task_id,type:'note',title:longTitle})).card;
+  const copies=(await call('batch_cards',{task_id,operations:[
+    {operation:'duplicate',card_id:source.id},
+    {operation:'duplicate',card_id:source.id,title:'用户副本标题'},
+    {operation:'duplicate',card_id:long.id}
+  ]})).results.map(result=>result.card);
+  assert.equal(copies[0].title,'用户标题 · Copy');
+  assert.equal(copies[1].title,'用户副本标题');
+  assert.equal(copies[2].title,longTitle.slice(0,493)+' · Copy');
+  assert.equal(copies[2].title.length,500);
+  assert.equal((await call('get_card',{task_id,card_id:source.id})).card.title,'用户标题');
+  assert.equal((await call('get_card',{task_id,card_id:long.id})).card.title,longTitle);
+});
+
 test('4 MiB 合法 base64 可上传，非法编码和旧版本不写入附件',async t=>{
   const {call,raw,task_id,url,dir}=await fixture(t);
   const bytes=Buffer.alloc(4*1024*1024,0xa5);

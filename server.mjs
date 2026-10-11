@@ -7,10 +7,11 @@ import { WorkdeskService } from './workdesk-service.mjs';
 import { handleMcp } from './mcp.mjs';
 import { openFolder } from './folder-window.mjs';
 import {localFilePath,actOnFile,normalizeLocalPath} from './local-files.mjs';
+import { requestLocale, localizedError } from './localization.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
-const STATIC = new Set(['index.html', 'styles.css', 'app.js', 'canvas.js', 'markdown.js', 'markdown.css', 'canvas-interaction.css', 'inspector.js', 'inspector.css', 'icons.js', 'model.js', 'changes.js', 'editor-state.js', 'favicon.svg']);
+const STATIC = new Set(['index.html', 'styles.css', 'app.js', 'canvas.js', 'markdown.js', 'markdown.css', 'canvas-interaction.css', 'inspector.js', 'inspector.css', 'icons.js', 'model.js', 'changes.js', 'editor-state.js', 'i18n.js', 'messages-app.js', 'messages-static.js', 'i18n.css', 'favicon.svg']);
 async function body(req, limit) {
   let length = 0; const chunks = [];
   for await (const chunk of req) {
@@ -40,6 +41,7 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
   const store = new Store(dataDir); await store.init();
   const service = new WorkdeskService(store);
   return http.createServer(async (req, res) => {
+    const locale = requestLocale(req.headers['accept-language']);
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
     try {
@@ -59,7 +61,10 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       }
       if (route === '/api/health' && req.method === 'GET') return json(res, 200, { app:'workdesk-local', status:'ok' });
       if (route === '/api/revision' && req.method === 'GET') return json(res, 200, { revision:store.state.revision });
-      if (route === '/api/state' && req.method === 'GET') return json(res, 200, await store.read());
+      if (route === '/api/state' && req.method === 'GET') {
+        await store.selectInitialLocale(locale);
+        return json(res, 200, await store.read());
+      }
       if (route === '/api/state' && req.method === 'PATCH') {
         let value;
         try { value = JSON.parse((await body(req, 16 * 1024 * 1024)).toString('utf8')); }
@@ -133,7 +138,8 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       res.end(bytes);
     } catch (error) {
       if (res.headersSent) return res.end();
-      json(res, error.status || (error.code === 'ENOENT' ? 404 : 500), { error: error.status ? error.message : '本地服务暂时无法完成操作，请重试。' });
+      res.setHeader('Content-Language', locale);
+      json(res, error.status || (error.code === 'ENOENT' ? 404 : 500), { error: localizedError(error, locale) });
     }
   });
 }

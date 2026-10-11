@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile, rename, copyFile, access, rm } from 'node:f
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { seedState, demoGuide, demoSvg } from './seed.mjs';
+import { seedState, demoAssets } from './seed.mjs';
 import { mergeStates } from './public/model.js';
 import { applyChanges } from './public/changes.js';
 
@@ -63,6 +63,8 @@ export class Store {
     }
   }
   async init() {
+    let created = false;
+    this.initialSeed = null;
     await mkdir(this.dir, { recursive: true });
     await mkdir(path.join(this.dir, 'files'), { recursive: true });
     try { this.state = JSON.parse(await readFile(path.join(this.dir, 'state.json'), 'utf8')); validateState(this.state); }
@@ -70,23 +72,78 @@ export class Store {
       if (error.code !== 'ENOENT') throw new AppError('无法读取本地数据，请保留 data 文件夹并检查 state.json', 500);
       this.state = seedState();
       await this.atomic(path.join(this.dir, 'state.json'), JSON.stringify(this.state, null, 2));
+      created = true;
     }
     try { this.files = JSON.parse(await readFile(path.join(this.dir, 'files.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; this.files = {}; }
-    for (const [id, name, bytes, mime] of [['demo-workflow', '工作流示意.svg', Buffer.from(demoSvg), 'image/svg+xml'], ['demo-guide', '工作台使用指南.md', Buffer.from(demoGuide), 'text/markdown']]) {
+    for (const {id, name, content, mime} of demoAssets()) {
       if (!this.files[id]) {
+        const bytes = Buffer.from(content);
         await writeFile(path.join(this.dir, 'files', id), bytes);
         this.files[id] = { id, taskId: 'task-welcome', name, mime, size: bytes.length };
       }
     }
     await this.atomic(path.join(this.dir, 'files.json'), JSON.stringify(this.files, null, 2));
     await this.syncDocs(this.state);
+    if (created) this.initialSeed = {state:structuredClone(this.state), files:structuredClone(this.files)};
   }
-  async read() { return structuredClone(this.state); }
-  enqueue(fn) {
-    const job = this.queue.then(fn);
+  async read() { this.initialSeed = null; return structuredClone(this.state); }
+  enqueue(fn, {preserveInitialSeed = false} = {}) {
+    const job = this.queue.then(() => {
+      if (!preserveInitialSeed) this.initialSeed = null;
+      return fn();
+    });
     this.queue = job.catch(() => {});
     return job;
+  }
+  selectInitialLocale(locale) {
+    return this.enqueue(async () => {
+      const initial = this.initialSeed;
+      this.initialSeed = null;
+      // Existing state files and previously exposed/changed samples never enter
+      // this path. Language switching must not rewrite editable user content.
+      if (!initial || locale !== 'en') return;
+      if (JSON.stringify(this.state) !== JSON.stringify(initial.state) || JSON.stringify(this.files) !== JSON.stringify(initial.files)) return;
+      const stateFile = path.join(this.dir, 'state.json'), indexFile = path.join(this.dir, 'files.json');
+      if (JSON.stringify(JSON.parse(await readFile(stateFile, 'utf8'))) !== JSON.stringify(initial.state) ||
+          JSON.stringify(JSON.parse(await readFile(indexFile, 'utf8'))) !== JSON.stringify(initial.files)) return;
+      const originals = [];
+      for (const asset of demoAssets()) {
+        const file = path.join(this.dir, 'files', asset.id), bytes = await readFile(file);
+        // A user may have edited an attachment outside the app before opening
+        // the browser. Such bytes also make the initial sample ineligible.
+        if (!bytes.equals(Buffer.from(asset.content))) return;
+        originals.push({file, bytes});
+      }
+      const next = seedState('en');
+      const oldTasks = new Map(initial.state.tasks.map(task => [task.id, task]));
+      for (const task of next.tasks) {
+        const old = oldTasks.get(task.id);
+        task.createdAt = old.createdAt; task.updatedAt = old.updatedAt;
+        for (const event of task.activity) event.at = old.activity.find(item => item.id === event.id)?.at ?? event.at;
+      }
+      const previousFiles = this.files, nextFiles = structuredClone(this.files);
+      try {
+        for (const asset of demoAssets('en')) {
+          const bytes = Buffer.from(asset.content);
+          await this.atomic(path.join(this.dir, 'files', asset.id), bytes);
+          nextFiles[asset.id] = {...nextFiles[asset.id], name:asset.name, size:bytes.length, mime:asset.mime};
+        }
+        await this.atomic(indexFile, JSON.stringify(nextFiles, null, 2));
+        this.files = nextFiles;
+        await this.commit(next);
+      } catch (error) {
+        this.files = previousFiles;
+        try {
+          for (const {file, bytes} of originals) await this.atomic(file, bytes);
+          await this.atomic(indexFile, JSON.stringify(previousFiles, null, 2));
+        } catch {
+          throw new AppError('示例语言初始化失败，无法完整还原示例附件。请保留 data 文件夹并检查磁盘空间或权限。', 500);
+        }
+        this.initialSeed = initial;
+        throw error;
+      }
+    }, {preserveInitialSeed:true});
   }
   async syncDocs(state, previous, journal) {
     const oldTasks = new Map(previous?.tasks.map(task => [task.id, task]) ?? []);
@@ -217,6 +274,7 @@ export class Store {
     return path.join(this.dir,'files',id+'--'+name);
   }
   async filePath(id) {
+    this.initialSeed = null;
     const named=this.namedFile(id);
     try {await access(named); return named;}
     catch(error) {if(error.code!=='ENOENT')throw error; return path.join(this.dir,'files',id);}

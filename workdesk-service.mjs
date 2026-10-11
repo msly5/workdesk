@@ -209,7 +209,8 @@ function batchCards(task,operations,files) {
       else if(operation.operation==='delete')result=removeCard(task,card);
       else {
         const copy=structuredClone(card);
-        copy.id=randomUUID();copy.title=(copy.title.slice(0,495)+' · 副本');copy.x+=35;copy.y+=35;
+        const suffix=' · Copy';
+        copy.id=randomUUID();copy.title=copy.title.slice(0,500-suffix.length)+suffix;copy.x+=35;copy.y+=35;
         if(copy.items)copy.items=copy.items.map(item=>({...item,id:randomUUID()}));
         applyCardFields(copy,operation,files,task.id);
         task.nodes.push(copy);record(task,'复制卡片「'+card.title+'」');result={card:copy};
@@ -249,7 +250,7 @@ export class WorkdeskService {
     return this.store.mutate(state=>{
       if (name==='create_task') {
         const now=new Date().toISOString();
-        const task={id:randomUUID(),title:args.title,tag:args.tag||'个人任务',goal:args.goal||'',nextAction:args.next_action||'',status:args.status||'active',icon:'layers',createdAt:now,updatedAt:now,nodes:[],edges:[],viewport:{x:0,y:0,zoom:1},activity:[]};
+        const task={id:randomUUID(),title:args.title,tag:args.tag||'',goal:args.goal||'',nextAction:args.next_action||'',status:args.status||'active',icon:'layers',createdAt:now,updatedAt:now,nodes:[],edges:[],viewport:{x:0,y:0,zoom:1},activity:[]};
         record(task,'创建任务');state.tasks.unshift(task);if(!state.activeTaskId)state.activeTaskId=task.id;
         return {task};
       }
