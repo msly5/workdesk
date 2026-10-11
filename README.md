@@ -4,7 +4,13 @@ English | [简体中文](README.zh-CN.md)
 
 A local-first task workspace for people and AI agents. Give each task its own canvas, organize documents and materials as cards, and let an external AI client read and update the workspace through the Model Context Protocol (MCP).
 
-Workdesk runs as a local Node.js service with a browser interface. It does not include a model or require a Workdesk account. The current interface is in Simplified Chinese.
+Workdesk runs as a local Node.js service with a browser interface. It does not include a model or require a Workdesk account.
+
+Screenshots show Workdesk running locally with fictional English sample content. The interface is currently in Simplified Chinese.
+
+![Workdesk task canvas with documents, to-dos and reference materials](docs/screenshots/canvas-overview.jpg)
+
+*Task canvas with documents, to-dos and reference materials.*
 
 ## Features
 
@@ -50,6 +56,10 @@ Create a task in the left sidebar and add cards from the bottom toolbar. Double-
 
 Drag empty canvas space to pan, scroll to move, and use **Ctrl+scroll** to zoom; macOS also supports **Cmd+scroll**. Use the fit-content button to bring cards into view. **Ctrl+S / Cmd+S** saves immediately, and **Ctrl+V / Cmd+V** pastes a screenshot when you are not editing a text field.
 
+![Markdown table displayed in Workdesk's right-hand inspector](docs/screenshots/markdown-preview.jpg)
+
+*Markdown table preview in the resizable inspector.*
+
 ### File copies and local references
 
 **Import attachment copy** and drag-and-drop copy files into Workdesk's `data` directory. Opening one of these cards edits the Workdesk copy. Later downloads and backups read that same copy, including external edits.
@@ -78,6 +88,10 @@ Changes to independent fields can merge. Concurrent changes to the same field pr
 ## Connect an AI client
 
 Start Workdesk first. The **Connect AI** button provides the local endpoint, example configuration and a configuration download. These examples do not automatically configure your AI client.
+
+![Workdesk MCP connection dialog with a local endpoint and client configuration](docs/screenshots/mcp-connection.jpg)
+
+*Local MCP endpoint and client configuration. The screenshot uses a separate demo instance on port 4318; the default is 4317, as shown below.*
 
 ### Streamable HTTP
 
