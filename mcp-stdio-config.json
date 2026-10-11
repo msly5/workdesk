@@ -2,7 +2,7 @@
   "mcpServers": {
     "workdesk": {
       "command": "node",
-      "args": ["D:/AICode/workdesk/mcp-stdio.mjs"]
+      "args": ["/absolute/path/to/workdesk/mcp-stdio.mjs"]
     }
   }
 }

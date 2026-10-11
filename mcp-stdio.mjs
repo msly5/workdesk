@@ -21,7 +21,7 @@ try {
   }});
   await server.connect(new StdioServerTransport());
 }catch(error){
-  console.error('无法连接本地工作台。请先双击 start.cmd，确认 '+endpoint.origin+' 可以打开。\n'+error.message);
+  console.error('无法连接本地工作台。请先双击 '+(process.platform==='darwin'?'start.command':'start.cmd')+'，确认 '+endpoint.origin+' 可以打开。\n'+error.message);
   await client.close().catch(()=>{});process.exit(1);
 }
 let stopping=false;

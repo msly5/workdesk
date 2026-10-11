@@ -2,16 +2,15 @@ import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { Store, AppError } from './storage.mjs';
 import { WorkdeskService } from './workdesk-service.mjs';
 import { handleMcp } from './mcp.mjs';
-import { focusFolder } from './folder-window.mjs';
-import {localFilePath,actOnFile} from './local-files.mjs';
+import { openFolder } from './folder-window.mjs';
+import {localFilePath,actOnFile,normalizeLocalPath} from './local-files.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
-const STATIC = new Set(['index.html', 'styles.css', 'app.js', 'canvas.js', 'markdown.js', 'icons.js', 'model.js', 'favicon.svg']);
+const STATIC = new Set(['index.html', 'styles.css', 'app.js', 'canvas.js', 'markdown.js', 'markdown.css', 'canvas-interaction.css', 'inspector.js', 'inspector.css', 'icons.js', 'model.js', 'changes.js', 'editor-state.js', 'favicon.svg']);
 async function body(req, limit) {
   let length = 0; const chunks = [];
   for await (const chunk of req) {
@@ -26,13 +25,7 @@ function json(res, status, value) {
   res.end(JSON.stringify(value));
 }
 async function localFolderPath(value) {
-  let folder = value.trim();
-  if (folder.startsWith('"') && folder.endsWith('"')) folder = folder.slice(1, -1).trim();
-  if (!folder) throw new AppError('请先填写文件夹的完整路径。');
-  if (!/^[a-z]:[\\/]/i.test(folder) || /[\u0000-\u001f<>:"|?*]/.test(folder.slice(2))) {
-    throw new AppError('请填写本机完整文件夹路径，例如 D:\\项目资料。');
-  }
-  folder = path.win32.normalize(folder);
+  const folder = normalizeLocalPath(value,'文件夹');
   let info;
   try { info = await stat(folder); }
   catch (error) {
@@ -54,7 +47,7 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) throw new AppError('仅支持本机访问', 403);
       const url = new URL(req.url, 'http://' + host);
       const route = decodeURIComponent(url.pathname);
-      if (['POST', 'PUT', 'DELETE'].includes(req.method) && req.headers.origin && req.headers.origin !== 'http://' + host) throw new AppError('拒绝来自其他网站的修改请求', 403);
+      if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && req.headers.origin && req.headers.origin !== 'http://' + host) throw new AppError('拒绝来自其他网站的修改请求', 403);
       if (route === '/mcp') {
         if(req.headers.origin && req.headers.origin!=='http://'+host)throw new AppError('拒绝其他网站访问本地 MCP',403);
         let payload;
@@ -65,7 +58,15 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
         return await handleMcp(req,res,payload,service);
       }
       if (route === '/api/health' && req.method === 'GET') return json(res, 200, { app:'workdesk-local', status:'ok' });
+      if (route === '/api/revision' && req.method === 'GET') return json(res, 200, { revision:store.state.revision });
       if (route === '/api/state' && req.method === 'GET') return json(res, 200, await store.read());
+      if (route === '/api/state' && req.method === 'PATCH') {
+        let value;
+        try { value = JSON.parse((await body(req, 16 * 1024 * 1024)).toString('utf8')); }
+        catch (error) { if (error instanceof AppError) throw error; throw new AppError('无法识别工作区改动'); }
+        const saved = await store.patch(value?.changes);
+        return json(res, 200, { revision:saved.revision, state:saved });
+      }
       if (route === '/api/state' && req.method === 'PUT') {
         let value;
         try { value = JSON.parse((await body(req, 16 * 1024 * 1024)).toString('utf8')); }
@@ -88,7 +89,7 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
       }
       if (route === '/api/backup' && req.method === 'GET') return json(res, 200, await store.export());
       if (route === '/api/file-action' && req.method === 'POST') {
-        if(process.platform!=='win32')throw new AppError('直接打开文件目前仅支持 Windows。');
+        if(!['win32','darwin'].includes(process.platform))throw new AppError('直接打开文件目前支持 Windows 和 macOS。');
         let target;
         try {target=JSON.parse((await body(req,4096)).toString('utf8'));}
         catch(error) {if(error instanceof AppError)throw error;throw new AppError('无法识别文件操作请求。');}
@@ -107,7 +108,7 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
         return json(res,200,await actOnFile(file,target.action));
       }
       if (route === '/api/open-folder' && req.method === 'POST') {
-        if (process.platform !== 'win32') throw new AppError('数据目录：' + store.dir);
+        if (!['win32','darwin'].includes(process.platform)) throw new AppError('数据目录：' + store.dir);
         const bytes = await body(req, 4096);
         let target = {};
         try { if (bytes.length) target = JSON.parse(bytes.toString('utf8')); }
@@ -123,19 +124,7 @@ export async function createApp({ dataDir = path.join(ROOT, 'data') } = {}) {
           // Legacy folder cards without a path continue to open the data folder.
           if (card.folderPath !== undefined) folder = await localFolderPath(card.folderPath);
         }
-        try {
-          await new Promise((resolve, reject) => {
-            const explorer = spawn('explorer.exe', [folder], { windowsHide:false, detached:true, stdio:'ignore' });
-            explorer.once('error', reject);
-            // Explorer may hand the request to an existing desktop process.
-            // Confirm process creation instead of waiting for its exit code.
-            explorer.once('spawn', () => { explorer.unref(); resolve(); });
-          });
-        } catch {
-          throw new AppError('无法启动资源管理器，请手动打开文件夹：' + folder, 500);
-        }
-        const foreground = await focusFolder(folder);
-        return json(res, 200, { ok:true, foreground });
+        return json(res, 200, await openFolder(folder));
       }
       const file = route === '/' ? 'index.html' : route.slice(1);
       if (req.method !== 'GET' || !STATIC.has(file)) throw new AppError('内容不存在', 404);

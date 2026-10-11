@@ -1,11 +1,16 @@
 import { icon } from './icons.js';
 import { markdown, escapeHTML as esc, safeURL } from './markdown.js';
 import { Canvas } from './canvas.js';
+import { initInspectorResize } from './inspector.js';
 import { restoreCard, mergeStates, updateInPlace, applyFormChanges } from './model.js';
+import { createChanges } from './changes.js';
+import { CONTENT_LIMIT, contentLengthState, insertionExcess, readRemoteUpdate } from './editor-state.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const uid = () => crypto.randomUUID();
+const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+const modifier = isMac ? '⌘' : 'Ctrl';
 const TYPES = { todo:['待办清单','todo'], markdown:['Markdown 文档','markdown'], note:['便签','note'], image:['图片与截图','image'], file:['附件','file'], link:['链接','link'] };
 const cardType = node => node.type === 'file' && node.localFile ? ['本地文件','file'] : node.type === 'link' && node.localFolder ? ['本地文件夹','folder'] : TYPES[node.type];
 const referencedName = value => (value || '').trim().replace(/^"|"$/g,'').replaceAll('\\','/').split('/').at(-1);
@@ -16,10 +21,13 @@ let dirty = false, saving = null, saveTimer, lastError = null, editorTab = 'edit
 let savedBase, syncing = false, uploading = 0;
 let composing = false, inspectorRendered = null;
 const compositionWaiters = new Set();
+const activePointers = new Set();
 const activeTask = () => state?.tasks.find(t => t.id === state.activeTaskId);
 const activeNode = () => activeTask()?.nodes.find(n => n.id === selected);
 
 $$('[data-icon]').forEach(el => { el.innerHTML = icon(el.dataset.icon); });
+initInspectorResize();
+$('#canvas-hint').innerHTML = '拖动空白处平移<span>·</span>双击卡片编辑<span>·</span>' + modifier + ' + 滚轮缩放';
 
 async function request(url, options = {}) {
   const response = await fetch(url, options);
@@ -39,7 +47,7 @@ function toast(message, options = {}) {
 }
 function updateSaveStatus() {
   const el = $('#save-status');
-  const text = lastError?.status === 409 ? '内容冲突 · 点击处理' : lastError ? '保存失败 · 点击重试' : saving ? '正在保存…' : dirty ? '等待保存…' : '已保存到本机';
+  const text = lastError?.code === 'CONTENT_LIMIT' ? '正文超限 · 尚未保存' : lastError?.status === 409 ? '内容冲突 · 点击处理' : lastError ? '保存失败 · 点击重试' : saving ? '正在保存…' : dirty ? '等待保存…' : '已保存到本机';
   el.className = 'save-status' + (lastError ? ' error' : saving || dirty ? ' saving' : '');
   el.innerHTML = icon(lastError ? 'help' : saving || dirty ? 'clock' : 'checkCircle') + '<span>' + text + '</span>';
   el.title = lastError?.message || '更改会自动保存到本机';
@@ -48,6 +56,7 @@ function markChanged() {
   if (!state) return;
   dirty = true;
   if (activeTask()) activeTask().updatedAt = new Date().toISOString();
+  if (lastError?.code === 'CONTENT_LIMIT' && !oversizedContent()) lastError = null;
   clearTimeout(saveTimer); if(!composing)saveTimer = setTimeout(() => flushSave().catch(() => {}), 500);
   updateSaveStatus();
 }
@@ -57,14 +66,24 @@ async function flushSave() {
   if (saving) { await saving; if (dirty) return flushSave(); return; }
   if (!dirty || !state) return;
   if(lastError?.status===409) {showConflict();throw lastError;}
+  const oversized = oversizedContent();
+  if (oversized) {
+    const error = new Error('「' + (oversized.title || '未命名卡片') + '」正文超过 ' + CONTENT_LIMIT.toLocaleString('zh-CN') + ' 字符。输入仍在页面中，请缩短正文或先下载保留。');
+    error.code = 'CONTENT_LIMIT';
+    const alreadyShown = lastError?.code === error.code;
+    lastError = error; updateSaveStatus();
+    if (!alreadyShown) toast(error.message, {error:true});
+    throw error;
+  }
   const snapshot = structuredClone(state), base = structuredClone(savedBase); dirty = false; lastError = null;
-  saving = request('/api/state', {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:snapshot,base})})
+  saving = Promise.resolve().then(()=>request('/api/state', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({changes:createChanges(base,snapshot)})}))
     .then(async result => {
       await waitForComposition();
       const merged=mergeStates(snapshot,state,result.state);
       adoptState(merged); savedBase=structuredClone(result.state);
       if(!canvas.drag)renderWorkspace();
       if(inspectorMode==='node')syncInspector();
+      else if(inspectorMode==='history')renderHistory();
     })
     .catch(error => { dirty = true; lastError = error; toast(error.status===409?'同一份内容被同时修改，点击顶部保存状态处理。':error.message, {error:true}); throw error; })
     .finally(() => { saving = null; updateSaveStatus(); });
@@ -75,21 +94,29 @@ function adoptState(next) {
   updateInPlace(state,next);
   if(selected&&!activeNode()){selected=null;closeInspector();}
 }
+function canSyncRemote() {
+  if(!state||saving||dirty||uploading||canvas.drag||connecting||composing||activePointers.size||$('#modal').open)return false;
+  if(document.body.classList.contains('resizing-inspector'))return false;
+  if(document.activeElement?.closest('input,textarea,select,[contenteditable="true"]'))return false;
+  if(window.getSelection()?.isCollapsed===false)return false;
+  return !inspectorMode || inspectorMode==='history' || (inspectorMode==='node' && activeNode()?.type==='markdown' && editorTab==='preview');
+}
 async function syncRemote() {
-  if(!state||syncing||saving||dirty||uploading||canvas.drag||connecting||inspectorMode||$('#modal').open)return;
+  if(syncing || !canSyncRemote())return;
   syncing=true;
   const revision=state.revision;
   try {
-    const remote=await request('/api/state');
-    // Recheck after awaiting: the user may have begun editing during the request.
-    if(dirty||saving||uploading||canvas.drag||connecting||inspectorMode||$('#modal').open||state.revision!==revision)return;
-    if(remote.revision<=revision)return;
+    const remote=await readRemoteUpdate({getRevision:()=>state.revision,canApply:canSyncRemote,readRevision:()=>request('/api/revision'),readState:()=>request('/api/state')});
+    if(!remote || !canSyncRemote() || state.revision!==revision)return;
     const active=state.activeTaskId;
     const viewports=new Map(state.tasks.map(t=>[t.id,structuredClone(t.viewport)]));
     savedBase=structuredClone(remote);
     if(remote.tasks.some(t=>t.id===active))remote.activeTaskId=active;
     for(const task of remote.tasks)if(viewports.has(task.id))task.viewport=viewports.get(task.id);
-    adoptState(remote);renderWorkspace();updateSaveStatus();
+    adoptState(remote);renderWorkspace();
+    if(inspectorMode==='node')syncInspector();
+    else if(inspectorMode==='history')renderHistory();
+    updateSaveStatus();
   } catch {} finally {syncing=false;}
 }
 function showConflict() {
@@ -125,12 +152,14 @@ function taskMatches(task) {
 }
 function renderSidebar() {
   if (!state) return;
+  const scroll = $('#task-list').scrollTop;
   const tasks = state.tasks.filter(taskMatches);
   $('#task-list').innerHTML = tasks.length ? tasks.map(task =>
     '<button class="task-entry' + (state.activeTaskId === task.id ? ' selected' : '') + '" data-task="' + task.id + '">' +
     '<span class="task-symbol">' + icon(task.icon || 'layers') + '</span><span class="task-entry-text"><span class="task-entry-title">' + esc(task.title) +
     '</span><span class="task-entry-meta ' + task.status + '"><span class="status-dot"></span>' + esc(task.tag || STATUS[task.status]) + '<span>·</span>' + task.nodes.length + ' 张卡片</span></span></button>'
   ).join('') : '<div class="no-results">' + ($('#task-search').value ? '没有找到匹配的内容' : '这里还没有任务') + '</div>';
+  $('#task-list').scrollTop = scroll;
   $$('[data-filter]').forEach(el => {
     const f = el.dataset.filter; el.classList.toggle('active', f === filter);
     const count = f === 'all' ? state.tasks.filter(t => t.status !== 'archived').length : f === 'active' ? state.tasks.filter(t => ['active','waiting','inbox'].includes(t.status)).length : state.tasks.filter(t => t.status === f).length;
@@ -239,6 +268,34 @@ function finishComposition() {
   composing=false;
   if(compositionWaiters.size)requestAnimationFrame(()=>{for(const resolve of compositionWaiters)resolve();compositionWaiters.clear();});
 }
+function oversizedContent() {
+  for (const task of state?.tasks || []) {
+    const node = task.nodes.find(node => (node.content || '').length > CONTENT_LIMIT);
+    if (node) return node;
+  }
+  return null;
+}
+function updateContentLimit() {
+  const hint=$('#node-content-limit'),node=activeNode();
+  if(!hint || !node)return;
+  const {length,remaining,excess}=contentLengthState(node.content || '');
+  hint.textContent=excess
+    ? '已超出 '+excess.toLocaleString('zh-CN')+' 字符，尚未保存；完整输入仍保留，请缩短或先下载。'
+    : length.toLocaleString('zh-CN')+' / '+CONTENT_LIMIT.toLocaleString('zh-CN')+' 字符 · 还可输入 '+remaining.toLocaleString('zh-CN')+' 字符';
+  hint.style.color=excess?'#a54858':'var(--muted)';
+  const input=$('#node-content-input');
+  input?.setAttribute('aria-invalid',String(excess>0));
+  $('#download-content-draft')?.classList.toggle('hidden',!excess);
+}
+function guardContentInsertion(event, inserted, label='输入') {
+  const input=event.target;
+  if(input.id!=='node-content-input' || composing || event.isComposing || typeof inserted!=='string')return;
+  const excess=insertionExcess(input.value,input.selectionStart,input.selectionEnd,inserted);
+  // Always allow a replacement that shortens an existing oversized IME draft.
+  if(!excess || excess<contentLengthState(input.value).excess)return;
+  event.preventDefault();
+  toast(label+'后将超出 '+excess.toLocaleString('zh-CN')+' 字符，此次'+label+'未添加；原文保持完整。',{error:true});
+}
 function syncInspector() {
   // A merge may update fields that were not being edited. Reflect the merged
   // content immediately so the next keystroke cannot overwrite an unseen AI edit.
@@ -276,18 +333,20 @@ function syncInspector() {
     replacement.scrollTop=controlScroll;
   }
 }
-function openEditor(id) {
-  if (!activeTask()?.nodes.some(n => n.id === id)) return;
-  selectNode(id); editorTab = 'edit'; inspectorMode = 'node'; renderInspector();
+function openEditor(id, tab) {
+  const node = activeTask()?.nodes.find(n => n.id === id);
+  if (!node) return;
+  selectNode(id); editorTab = tab || (node.type === 'markdown' && node.content?.trim() ? 'preview' : 'edit'); inspectorMode = 'node'; renderInspector();
 }
 function renderInspector() {
   const node = activeNode(); if (!node) return closeInspector();
   inspectorRendered=structuredClone(node);
   const type = cardType(node);
+  const contentLimitHint='<p class="editor-hint" id="node-content-limit" role="status" aria-live="polite"></p><button class="subtle-button hidden" id="download-content-draft">'+icon('download')+'下载完整正文</button>';
   let editor = '<label class="field"><span>卡片标题</span><input id="node-title-input" value="' + esc(node.title) + '" maxlength="300"></label>';
   if (node.type === 'markdown') {
     editor += '<div class="editor-tabs"><button data-editor-tab="edit" class="' + (editorTab === 'edit' ? 'active' : '') + '">编辑</button><button data-editor-tab="preview" class="' + (editorTab === 'preview' ? 'active' : '') + '">预览</button></div>' +
-      (editorTab === 'edit' ? '<textarea id="node-content-input" class="editor-textarea" spellcheck="false" placeholder="写下你的文档，支持 Markdown…">' + esc(node.content) + '</textarea><p class="editor-hint">支持标题、列表、粗体、引用、代码块和链接。<br>文档会同步保存为本地 .md 文件。</p>' : '<div class="editor-preview markdown">' + markdown(node.content || '*还没有内容*') + '</div>') +
+      (editorTab === 'edit' ? '<textarea id="node-content-input" class="editor-textarea" spellcheck="false" aria-describedby="node-content-limit" placeholder="写下你的文档，支持 Markdown…">' + esc(node.content) + '</textarea><p class="editor-hint">支持标题、表格、列表、粗体、引用、代码块和链接。<br>文档会同步保存为本地 .md 文件。</p>' : '<div class="editor-preview markdown">' + markdown(node.content || '*还没有内容*') + '</div>') + contentLimitHint +
       '<button class="subtle-button" id="download-md">' + icon('download') + '下载 Markdown</button>';
   } else if (node.type === 'todo') {
     editor += '<span class="field-label">行动清单</span><div id="editor-todos">' + node.items.map(item => '<div class="editor-todo-item"><button class="check-box' + (item.done ? ' checked' : '') + '" data-editor-toggle="' + item.id + '" aria-label="切换完成状态">' + (item.done ? icon('check') : '') + '</button><input data-item-input="' + item.id + '" value="' + esc(item.text) + '" aria-label="待办内容" maxlength="5000"><button class="icon-button" data-remove-item="' + item.id + '" aria-label="删除待办项">' + icon('close') + '</button></div>').join('') + '</div><button class="add-todo-item" id="add-todo-item">' + icon('plus') + '添加一项</button>';
@@ -296,21 +355,22 @@ function renderInspector() {
     if (node.type === 'file') {
       const name = node.localFile ? referencedName(node.filePath) || '本地文件' : node.fileName || '附件';
       editor += '<div class="editor-file"><span class="file-ext">' + esc(name.includes('.') ? name.split('.').at(-1).slice(0,5).toUpperCase() : 'FILE') + '</span><span class="file-info"><strong>' + esc(name) + '</strong><small>' + (node.localFile ? '本地文件引用' : fileSize(node.size) + ' · 导入时大小') + '</small></span></div>';
-      if (node.localFile) editor += '<label class="field"><span>原文件路径</span><input id="node-file-path-input" value="' + esc(node.filePath || '') + '" placeholder="D:\\资料\\报告.docx" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">只保存路径，不复制文件。打开后修改的是原文件；移动或删除后需更新路径。可在资源管理器中右键“复制文件地址”后粘贴。</p>';
+      if (node.localFile) editor += '<label class="field"><span>原文件路径</span><input id="node-file-path-input" value="' + esc(node.filePath || '') + '" placeholder="' + (isMac ? '/Users/你的用户名/Documents/报告.docx' : 'D:\\资料\\报告.docx') + '" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">只保存路径，不复制文件。打开后修改的是原文件；移动或删除后需更新路径。' + (isMac ? '可在 Finder 选中文件，按 ⌥⌘C 复制路径后粘贴。' : '可在资源管理器中右键“复制文件地址”后粘贴。') + '</p>';
       else editor += '<p class="editor-hint">这是导入时的附件副本，与原文件独立。打开后编辑这份副本，后续下载和备份会读取修改后的内容。</p>';
     }
     if (node.type === 'link') {
       editor += '<label class="field"><span>链接类型</span><select id="node-link-kind"><option value="web"' + (!node.localFolder ? ' selected' : '') + '>网页链接</option><option value="folder"' + (node.localFolder ? ' selected' : '') + '>本地文件夹</option></select></label>';
-      if (node.localFolder) editor += '<label class="field"><span>文件夹路径</span><input id="node-folder-input" value="' + esc(node.folderPath || '') + '" placeholder="D:\\项目资料" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">' + (node.folderPath === undefined ? '当前打开工作台数据目录，填写路径后可改为指定文件夹。' : '填写本机完整文件夹路径。这里只保存引用，不复制文件夹内容。') + '</p><button class="subtle-button" data-folder="' + node.id + '">' + icon('folder') + '打开文件夹</button>';
+      if (node.localFolder) editor += '<label class="field"><span>文件夹路径</span><input id="node-folder-input" value="' + esc(node.folderPath || '') + '" placeholder="' + (isMac ? '/Users/你的用户名/Documents/项目资料' : 'D:\\项目资料') + '" maxlength="32767" spellcheck="false" autocomplete="off"></label><p class="editor-hint">' + (node.folderPath === undefined ? '当前打开工作台数据目录，填写路径后可改为指定文件夹。' : '填写本机完整文件夹路径。这里只保存引用，不复制文件夹内容。') + '</p><button class="subtle-button" data-folder="' + node.id + '">' + icon('folder') + '打开文件夹</button>';
       else editor += '<label class="field"><span>链接地址</span><input id="node-url-input" type="url" value="' + esc(node.url || '') + '" placeholder="https://…"></label>';
     }
-    editor += '<label class="field"><span>' + (node.type === 'note' ? '便签内容' : '备注') + '</span><textarea id="node-content-input" rows="' + (node.type === 'note' ? 8 : 4) + '" placeholder="写下一点想法…">' + esc(node.content || '') + '</textarea></label>';
+    editor += '<label class="field"><span>' + (node.type === 'note' ? '便签内容' : '备注') + '</span><textarea id="node-content-input" rows="' + (node.type === 'note' ? 8 : 4) + '" aria-describedby="node-content-limit" placeholder="写下一点想法…">' + esc(node.content || '') + '</textarea></label>'+contentLimitHint;
     if (node.type === 'note') editor += '<span class="field-label">便签颜色</span><div class="color-picker">' + ['yellow','blue','green','pink'].map((color,i) => '<button class="color-swatch ' + color + (node.color === color ? ' selected' : '') + '" data-color="' + color + '" aria-label="' + ['黄色','蓝色','绿色','粉色'][i] + '便签"></button>').join('') + '</div>';
     if (node.type === 'file' || (node.type === 'image' && node.assetId)) editor += fileButtons(node);
     if (['image','file'].includes(node.type) && node.assetId) editor += '<a class="subtle-button file-download" href="/api/files/' + node.assetId + '?download=1">' + icon('download') + '下载副本</a>';
   }
   $('#inspector').classList.remove('hidden');
   $('#inspector').innerHTML = '<div class="inspector-header"><span class="inspector-type">' + icon(type[1]) + type[0] + '</span><span class="inspector-header-actions"><button class="icon-button" id="delete-node" title="删除卡片" aria-label="删除卡片">' + icon('trash') + '</button><button class="icon-button" id="close-inspector" aria-label="关闭编辑器">' + icon('close') + '</button></span></div><div class="inspector-main">' + editor + '</div><div class="inspector-footer"><span>' + icon('save') + ' 更改自动保存</span><button id="connect-from-editor">' + icon('link') + ' 连接卡片</button></div>';
+  updateContentLimit();
 }
 function refreshNode(id = selected) {
   canvas.refreshNode(id); if (view === 'list') renderList();
@@ -381,7 +441,7 @@ function setTaskStatus(status) {
 function nodeMenu(anchor, id) {
   const node=activeTask()?.nodes.find(n=>n.id===id);
   popover(anchor,[
-    {label:'编辑卡片',icon:'edit',action:() => openEditor(id)},
+    {label:'编辑卡片',icon:'edit',action:() => openEditor(id,'edit')},
     ...((node?.type==='file'||node?.type==='image'&&node.assetId)?[
       {label:'打开文件',icon:'external',action:()=>fileAction(id,'open')},
       {label:'打开所在文件夹',icon:'folder',action:()=>fileAction(id,'reveal')},
@@ -474,7 +534,7 @@ async function openFolder(cardId) {
       await flushSave();
     }
     const result = await request('/api/open-folder',options);
-    toast(result.foreground === false ? '文件夹已打开，请点击任务栏中的资源管理器查看' : result.foreground === true ? '文件夹已打开' : typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
+    toast(result.foreground === false ? (isMac ? '文件夹已打开，请在 Finder 查看' : '文件夹已打开，请点击任务栏中的资源管理器查看') : result.foreground === true ? '文件夹已打开' : typeof cardId === 'string' ? '已请求打开文件夹' : '已请求打开本机数据文件夹');
   }
   catch(error){toast(error.message,{error:true});}
 }
@@ -488,7 +548,7 @@ async function fileAction(cardId,action) {
     const taskId=task.id;
     await flushSave();
     const result=await request('/api/file-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({taskId,cardId,action})});
-    toast(action==='open' ? '已请求使用默认程序打开'+(node.localFile?'原文件':'附件副本') : result.foreground===false ? '已定位文件，请点击任务栏中的资源管理器查看' : '已打开所在文件夹并选中文件');
+    toast(action==='open' ? '已请求使用默认程序打开'+(node.localFile?'原文件':'附件副本') : result.foreground===false ? (isMac ? '已定位文件，请在 Finder 查看' : '已定位文件，请点击任务栏中的资源管理器查看') : '已打开所在文件夹并选中文件');
   } catch(error) {toast(error.message,{error:true});}
 }
 async function uploadFiles(files, point) {
@@ -516,22 +576,28 @@ function connectAI() {
   const url=location.origin+'/mcp';
   const config=JSON.stringify({mcpServers:{workdesk:{url}}},null,2);
   showModal('让 AI 帮你整理工作台',
-    '<div class="sync-pill">本地 MCP 已随工作台启动</div><p class="modal-subtitle">把下面的地址添加到智能体的 MCP 设置，选择 Streamable HTTP。</p><div class="connection-label">本机服务地址</div><div class="connection-field">'+esc(url)+'</div><div class="connection-label">支持 URL 的客户端配置</div><pre class="connection-field">'+esc(config)+'</pre><p class="help-note">智能体可以查询、新建和更新任务，编辑文档、待办和连线，添加附件。网页空闲时约 2 秒同步；编辑器打开时暂停刷新，保护输入。</p><div class="connection-example">试着对智能体说：<br>“在本地工作台里新建一个本周工作任务，列出三个待办，再放一份会议记录文档。”</div><p class="help-note">仅支持命令的客户端可使用项目中的 mcp-stdio.mjs，连接示例见 README。连接后，你授权的智能体将能读写工作台资料。</p>',
+    '<div class="sync-pill">本地 MCP 已随工作台启动</div><p class="modal-subtitle">把下面的地址添加到智能体的 MCP 设置，选择 Streamable HTTP。</p><div class="connection-label">本机服务地址</div><div class="connection-field">'+esc(url)+'</div><div class="connection-label">支持 URL 的客户端配置</div><pre class="connection-field">'+esc(config)+'</pre><p class="help-note">智能体可以查询和更新任务，编辑文档、待办和连线，读取或添加附件，批量创建、修改和复制卡片。网页空闲时约 2 秒同步；只读预览和任务动态会更新，输入、选字和拖动时暂停刷新。</p><div class="connection-example">试着对智能体说：<br>“在本地工作台里新建一个本周工作任务，列出三个待办，再放一份会议记录文档。”</div><p class="help-note">仅支持命令的客户端可使用项目中的 mcp-stdio.mjs，连接示例见 README。连接后，你授权的智能体将能读写工作台资料。</p>',
     '<button class="secondary" id="copy-mcp-url">复制地址</button><button class="primary" id="download-mcp-config">下载配置</button>',{className:'mcp-modal'});
   $('#copy-mcp-url').onclick=async()=>{try{await navigator.clipboard.writeText(url);toast('MCP 地址已复制');}catch{toast('请选中地址复制');}};
   $('#download-mcp-config').onclick=()=>download('workdesk-mcp.json',config);
 }
 function help() {
   showModal('让工作，慢慢有序','<p class="modal-subtitle">每个任务都有自己的画布，所有内容保存在本机。</p>' + [
-    ['新建任务','N'],['搜索任务或卡片','/'],['添加卡片','底部工具栏'],['编辑卡片','双击卡片'],['移动卡片','拖动卡片'],['移动画布','拖动空白处 / 滚轮'],['缩放画布','Ctrl + 滚轮'],['建立关联','卡片右侧圆点 → 目标卡片'],['粘贴截图','Ctrl + V'],['取消选择或连线','Esc'],['保存当前更改','Ctrl + S']
+    ['新建任务','N'],['搜索任务或卡片','/'],['添加卡片','底部工具栏'],['编辑卡片','双击卡片'],['移动卡片','拖动卡片'],['移动画布','拖动空白处 / 中键拖动 / 滚轮'],['缩放画布',modifier + ' + 滚轮 / 触控板捏合'],['建立关联','卡片右侧圆点 → 目标卡片'],['粘贴截图',modifier + ' + V'],['取消选择或连线','Esc'],['保存当前更改',modifier + ' + S'],['调整右侧栏','拖动左边缘；双击恢复宽度']
   ].map(([name,key])=>'<div class="help-row"><strong>'+name+'</strong><kbd>'+key+'</kbd></div>').join('')+'<p class="help-note">文件也可以直接拖到画布里，单个附件最大 25 MB。<br>左下角菜单可打开数据文件夹、导出包含附件的备份。<br>首版用于手动组织工作，连线表示关联关系。</p>','<button class="primary" data-close-modal>开始整理</button>');
 }
 function showHistory() {
   if (inspectorMode === 'history' && !$('#inspector').classList.contains('hidden')) return closeInspector();
+  finishComposition();
   inspectorMode = 'history'; $('#inspector').classList.remove('hidden');
+  renderHistory();
+}
+function renderHistory() {
+  const scroll=$('.inspector-main')?.scrollTop || 0;
   const items = activeTask()?.activity || [];
   $('#inspector').innerHTML = '<div class="inspector-header"><span class="inspector-type">' + icon('history') + '任务动态</span><button class="icon-button" id="close-inspector" aria-label="关闭动态">' + icon('close') + '</button></div><div class="inspector-main">' +
     (items.length ? items.map(item=>'<div class="activity-item"><strong>'+esc(item.text)+'</strong><small>'+new Date(item.at).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})+'</small></div>').join('') : '<div class="activity-empty">从第一个行动开始，留下工作足迹。</div>') + '</div>';
+  $('.inspector-main').scrollTop=scroll;
 }
 
 // Task navigation and global controls.
@@ -574,9 +640,12 @@ $('#add-image').onclick = () => $('#image-input').click();
 [$('#file-input'),$('#image-input')].forEach(input=>input.onchange=()=>{uploadFiles([...input.files]);input.value='';});
 $('#modal').addEventListener('click',event=>{if(event.target.closest('[data-close-modal]') || event.target===$('#modal'))$('#modal').close();});
 document.addEventListener('pointerdown',event=>{
+  activePointers.add(event.pointerId);
   if (!event.target.closest('#popover,#task-menu,#task-status,#workspace-menu,[data-node-menu]')) closePopover();
   if(innerWidth<=600 && $('#sidebar').classList.contains('open') && !event.target.closest('#sidebar,#mobile-menu'))$('#sidebar').classList.remove('open');
 });
+for(const type of ['pointerup','pointercancel'])window.addEventListener(type,event=>activePointers.delete(event.pointerId));
+window.addEventListener('blur',()=>activePointers.clear());
 
 // Card actions are shared between the canvas, list and editor.
 document.addEventListener('click',event=>{
@@ -584,7 +653,7 @@ document.addEventListener('click',event=>{
   const find = selector => target.closest(selector);
   if (find('[data-connect]')) return startConnection(find('[data-connect]').dataset.connect);
   if (find('[data-node-menu]')) return nodeMenu(find('[data-node-menu]'),find('[data-node-menu]').dataset.nodeMenu);
-  if (find('[data-edit]')) {event.preventDefault();return openEditor(find('[data-edit]').dataset.edit);}
+  if (find('[data-edit]')) {event.preventDefault();return openEditor(find('[data-edit]').dataset.edit,'edit');}
   if (find('[data-preview]')) return previewImage(find('[data-preview]').dataset.preview);
   if (find('[data-folder]')) return openFolder(find('[data-folder]').dataset.folder);
   if (find('[data-file-open]')) return fileAction(find('[data-file-open]').dataset.fileOpen,'open');
@@ -607,9 +676,16 @@ document.addEventListener('click',event=>{
   if (find('[data-remove-item]')) {const node=activeNode();node.items=node.items.filter(i=>i.id!==find('[data-remove-item]').dataset.removeItem);markChanged();refreshNode();renderInspector();return;}
   if (find('#add-todo-item')) {activeNode().items.push({id:uid(),text:'',done:false});markChanged();refreshNode();renderInspector();$$('[data-item-input]').at(-1)?.focus();return;}
   if (find('#download-md')) {const node=activeNode();return download(node.title.replace(/[\\/:*?"<>|]/g,'_')+'.md',node.content,'text/markdown;charset=utf-8');}
+  if (find('#download-content-draft')) {const node=activeNode();return download(node.title.replace(/[\\/:*?"<>|]/g,'_')+(node.type==='markdown'?'.md':'.txt'),node.content,'text/plain;charset=utf-8');}
   if (card && !canvas.wasDragged) selectNode(card.dataset.id);
 });
 $('#list-surface').addEventListener('dblclick',event=>{const card=event.target.closest('.node');if(card&&!event.target.closest('button,a'))openEditor(card.dataset.id);});
+$('#inspector').addEventListener('paste',event=>guardContentInsertion(event,event.clipboardData?.getData('text/plain'),'粘贴'));
+$('#inspector').addEventListener('beforeinput',event=>{
+  if(event.inputType==='insertFromPaste')return; // The paste handler sees the full clipboard before any truncation.
+  if(event.inputType==='insertText' || event.inputType==='insertReplacementText')guardContentInsertion(event,event.data);
+  else if(event.inputType==='insertLineBreak' || event.inputType==='insertParagraph')guardContentInsertion(event,'\n');
+});
 $('#inspector').addEventListener('input',event=>{
   const node=activeNode();if(!node||inspectorMode!=='node')return;
   if(event.target.id==='node-title-input')node.title=event.target.value;
@@ -621,7 +697,7 @@ $('#inspector').addEventListener('input',event=>{
   }
   else if(event.target.dataset.itemInput){const item=node.items.find(i=>i.id===event.target.dataset.itemInput);if(item)item.text=event.target.value;}
   else return;
-  markChanged();refreshNode();
+  updateContentLimit();markChanged();refreshNode();
 });
 $('#inspector').addEventListener('compositionstart',()=>{composing=true;clearTimeout(saveTimer);});
 $('#inspector').addEventListener('compositionend',()=>{finishComposition();if(dirty)markChanged();});
@@ -652,6 +728,7 @@ document.addEventListener('paste',event=>{
   if(images.length){event.preventDefault();uploadFiles(images.map((file,i)=>new File([file],'截图-'+new Date().toLocaleString('sv-SE').replace(/[: ]/g,'-')+'-'+(i+1)+'.png',{type:file.type})));}
 });
 document.addEventListener('keydown',event=>{
+  if (event.isComposing || event.keyCode === 229) return;
   const editing=event.target.closest('input,textarea,select,[contenteditable="true"]');
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();flushSave().then(()=>toast('已保存到本机')).catch(()=>{});return;}
   if(event.key==='Escape'){cancelConnection();closePopover();if(!$('#modal').open)closeInspector();selectNode(null);return;}

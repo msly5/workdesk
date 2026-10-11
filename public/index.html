@@ -8,6 +8,9 @@
   <meta name="description" content="每件工作一张桌面。用独立画布整理任务、文档、截图和附件，所有内容保存在本机。">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/markdown.css">
+  <link rel="stylesheet" href="/canvas-interaction.css">
+  <link rel="stylesheet" href="/inspector.css">
 </head>
 <body>
   <aside class="sidebar" id="sidebar">
@@ -63,6 +66,7 @@
     </section>
   </main>
   <aside class="inspector hidden" id="inspector" aria-label="卡片编辑器"></aside>
+  <div class="inspector-resize" id="inspector-resize" role="separator" tabindex="0" aria-label="调整右侧栏宽度" aria-orientation="vertical" aria-controls="inspector" title="拖动调整宽度，双击恢复默认；也可用左右方向键"></div>
   <div class="toast-container" id="toasts" aria-live="polite"></div>
   <div class="popover hidden" id="popover"></div>
   <dialog id="modal"><div id="modal-content"></div></dialog>

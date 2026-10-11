@@ -1,3 +1,5 @@
+const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable]:not([contenteditable="false"]),.edge-group';
+
 export class Canvas {
   constructor(options) {
     Object.assign(this, options);
@@ -10,15 +12,27 @@ export class Canvas {
     this.el.addEventListener('pointermove', event => this.pointerMove(event));
     this.el.addEventListener('pointerup', event => this.pointerUp(event));
     this.el.addEventListener('pointercancel', event => this.pointerUp(event));
+    this.el.addEventListener('lostpointercapture', event => this.pointerUp(event));
+    window.addEventListener('blur', () => {
+      if (this.drag) this.pointerUp({ pointerId: this.drag.pointerId });
+    });
+    this.el.addEventListener('click', event => {
+      if (this.wasDragged) { event.preventDefault(); event.stopPropagation(); }
+    }, true);
+    this.el.addEventListener('auxclick', event => {
+      // The middle button pans even over a card or link.
+      if (event.button === 1) event.preventDefault();
+    });
     this.el.addEventListener('wheel', event => this.wheel(event), { passive: false });
     this.el.addEventListener('dblclick', event => {
       const node = event.target.closest('.node');
-      if (node && !event.target.closest('button,a,input')) this.onEdit(node.dataset.id);
+      if (node && !this.wasDragged && !event.target.closest(INTERACTIVE)) this.onEdit(node.dataset.id);
     });
     new ResizeObserver(() => this.updateTransform()).observe(this.el);
     new ResizeObserver(() => this.renderEdges()).observe(this.nodesEl);
   }
   render() {
+    if (this.drag) this.pointerUp({ pointerId: this.drag.pointerId });
     const task = this.getTask();
     this.nodesEl.innerHTML = task ? task.nodes.map(node => this.renderCard(node)).join('') : '';
     this.updateTransform();
@@ -29,6 +43,7 @@ export class Canvas {
     const node = this.getTask()?.nodes.find(n => n.id === id);
     const el = this.nodesEl.querySelector('[data-id="' + id + '"]');
     if (!node || !el) return;
+    if (this.drag?.node?.id === id) this.pointerUp({ pointerId: this.drag.pointerId });
     const fragment = document.createElement('template'); fragment.innerHTML = this.renderCard(node);
     el.replaceWith(fragment.content.firstElementChild);
     this.select(this.selected);
@@ -64,22 +79,30 @@ export class Canvas {
     }).join('');
   }
   pointerDown(event) {
-    if (event.button !== 0 && event.button !== 1) return;
-    if (this.isConnecting() || event.target.closest('button,a,input,textarea,.edge-group')) return;
+    if (this.drag || (event.button !== 0 && event.button !== 1)) return;
+    if (event.button === 0 && (this.isConnecting() || event.target.closest(INTERACTIVE))) return;
     const task = this.getTask(); if (!task) return;
-    const nodeEl = event.target.closest('.node');
+    const nodeEl = event.button === 0 ? event.target.closest('.node') : null;
     const node = nodeEl ? task.nodes.find(n => n.id === nodeEl.dataset.id) : null;
-    if (node) this.onSelect(node.id);
-    else this.onSelect(null);
-    this.drag = { pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, moved:false, node, nodeEl, x:node ? node.x : task.viewport.x, y:node ? node.y : task.viewport.y };
+    if (event.button === 0) {
+      this.onSelect(node?.id ?? null);
+      nodeEl?.focus({ preventScroll: true });
+    }
+    // Prevent native text/image dragging before it starts. Capture the card itself
+    // so an ordinary double click still targets that card and opens its editor.
+    event.preventDefault();
+    const captureEl = nodeEl || this.el;
+    this.drag = { task, captureEl, pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, moved:false, node, nodeEl, x:node ? node.x : task.viewport.x, y:node ? node.y : task.viewport.y };
+    captureEl.setPointerCapture(event.pointerId);
   }
   pointerMove(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const task = this.getTask();
+    if (task !== this.drag.task) { this.pointerUp(event); return; }
+    event.preventDefault();
     const dx = event.clientX - this.drag.startX, dy = event.clientY - this.drag.startY;
     if (!this.drag.moved && Math.hypot(dx, dy) < 4) return;
     this.drag.moved = true;
-    if (!this.el.hasPointerCapture(event.pointerId)) this.el.setPointerCapture(event.pointerId);
     if (this.drag.node) {
       this.drag.nodeEl.classList.add('dragging');
       this.drag.node.x = Math.round(this.drag.x + dx / task.viewport.zoom);
@@ -95,23 +118,29 @@ export class Canvas {
   }
   pointerUp(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
-    this.wasDragged = this.drag.moved;
-    if (this.drag.moved) this.onChange();
-    this.drag.nodeEl?.classList.remove('dragging');
-    this.el.classList.remove('panning');
+    const drag = this.drag;
     this.drag = null;
-    if (this.el.hasPointerCapture(event.pointerId)) this.el.releasePointerCapture(event.pointerId);
+    this.wasDragged = drag.moved;
+    drag.nodeEl?.classList.remove('dragging');
+    this.el.classList.remove('panning');
+    if (drag.captureEl.hasPointerCapture(event.pointerId)) drag.captureEl.releasePointerCapture(event.pointerId);
+    if (drag.moved) this.onChange();
     setTimeout(() => { this.wasDragged = false; }, 0);
   }
   wheel(event) {
     if (!this.getTask()) return;
     event.preventDefault();
+    if (this.drag) return;
+    // Trackpads report pixels; some mice report lines or pages.
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.el.clientHeight : 1;
+    let dx = event.deltaX * unit, dy = event.deltaY * unit;
     if (event.ctrlKey || event.metaKey) {
       const rect = this.el.getBoundingClientRect();
-      this.zoom(Math.exp(-event.deltaY * .003), event.clientX - rect.left, event.clientY - rect.top);
+      this.zoom(Math.exp(-dy * .003), event.clientX - rect.left, event.clientY - rect.top);
     } else {
+      if (event.shiftKey && !dx) { dx = dy; dy = 0; }
       const view = this.getTask().viewport;
-      view.x -= event.deltaX; view.y -= event.deltaY;
+      view.x -= dx; view.y -= dy;
       this.updateTransform(); this.onChange();
     }
   }

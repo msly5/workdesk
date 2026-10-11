@@ -1,0 +1,17 @@
+/* Card contents are a drag surface. Text remains selectable in the editor/list. */
+.canvas .node,
+.canvas .node .markdown {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.canvas .node input,
+.canvas .node textarea,
+.canvas .node [contenteditable]:not([contenteditable="false"]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.canvas {
+  overscroll-behavior: none;
+}

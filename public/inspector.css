@@ -1,0 +1,32 @@
+:root { --inspector-width: 420px; --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+.inspector { width: var(--inspector-width); max-width: 100vw; }
+.inspector-main { min-height: 0; min-width: 0; overscroll-behavior: contain; }
+.editor-textarea, .markdown code, .connection-field { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+.editor-preview { color: #59647a; }
+.inspector-resize { display: none; position: fixed; top: 44px; bottom: 0; right: calc(var(--inspector-width) - 5px); width: 10px; z-index: 36; cursor: col-resize; touch-action: none; }
+body:has(#inspector:not(.hidden)) .inspector-resize { display: block; }
+.inspector-resize::after { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background .15s; }
+.inspector-resize:hover::after, .inspector-resize:focus-visible::after, .resizing-inspector .inspector-resize::after { background: var(--purple); }
+.inspector-resize:focus-visible { outline: 2px solid var(--purple); outline-offset: -2px; }
+.resizing-inspector, .resizing-inspector * { cursor: col-resize !important; user-select: none !important; -webkit-user-select: none !important; }
+.workspace { container-type: inline-size; }
+body:has(#inspector:not(.hidden)) .floating-tools { left: 50%; }
+.floating-tools { max-width: calc(100% - 28px); }
+.add-toolbar { overflow-x: auto; }
+.tool-button { flex-shrink: 0; }
+.toolbar-separator { flex-shrink: 0; }
+@media (min-width: 1100px) {
+  body:has(#inspector:not(.hidden)) .workspace,
+  body:has(#inspector:not(.hidden)) .task-header { margin-right: var(--inspector-width); }
+  body:has(#inspector:not(.hidden)) .task-heading { flex-wrap: wrap; }
+  body:has(#inspector:not(.hidden)) .task-eyebrow { display: none; }
+  body:has(#inspector:not(.hidden)) .task-heading-actions { margin-left: auto; }
+}
+@container (max-width: 620px) {
+  .zoom-toolbar { bottom: 108px; right: 16px; }
+  .canvas-hint { display: none; }
+}
+@media (max-width: 600px) {
+  .inspector { width: 100vw; }
+  body:has(#inspector:not(.hidden)) .inspector-resize { display: none; }
+}

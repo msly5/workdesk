@@ -1,107 +1,203 @@
-# 本地工作台
+English | [简体中文](README.zh-CN.md)
 
-每件工作一张独立桌面，用卡片整理待办、文档、截图、附件和参考链接。
+# Workdesk
 
-## 开始使用
+A local-first task workspace for people and AI agents. Give each task its own canvas, organize documents and materials as cards, and let an external AI client read and update the workspace through the Model Context Protocol (MCP).
 
-双击 **start.cmd**，浏览器会打开 `http://127.0.0.1:4317`。服务在后台运行，关闭网页后仍能重新打开。双击 **stop.cmd** 停止服务。
+Workdesk runs as a local Node.js service with a browser interface. It does not include a model or require a Workdesk account. The current interface is in Simplified Chinese.
 
-新电脑需要先安装 **Node.js 22 或更新版本**（安装包包含 npm），安装后重新打开启动窗口。双击 `start.cmd` 时会检查版本，并在缺少依赖时自动安装；首次启动需要联网，请等待安装完成。后续启动可离线使用。
+## Features
 
-也可以在本目录先运行 `npm ci`，再运行 `npm start`；这种方式关闭终端后服务会停止。
+- **A canvas for each task:** track goals, next actions, status and activity; search, archive and restore tasks; switch between canvas and list views.
+- **Six card types:** to-do lists, Markdown documents, notes, links, images and files. Link cards can also reference local folders; file cards can reference original local files.
+- **Direct manipulation:** drag cards, pan and zoom the canvas, and connect cards with labeled relationships. Resize the right-hand inspector by dragging its left edge; its width is remembered in the browser.
+- **Markdown editing and preview:** headings, lists, bold text, quotes, fenced code, links and tables, including column alignment and horizontal scrolling. Download documents as `.md` files.
+- **Materials alongside your work:** drag in files, paste screenshots, and open or reveal files through Windows Explorer or macOS Finder.
+- **Shared work with agents:** 16 MCP tools cover tasks, cards, to-dos, connections and attachments, with pagination, revision checks and atomic card batches.
+- **Local persistence:** automatic incremental saves, Markdown copies on disk and JSON backup export. Read-only previews and activity panels receive agent updates while preserving scroll position.
 
-启动失败时，窗口会显示原因并停留：依赖下载失败请检查网络或 npm 镜像，详细记录在 `install.log`；后台服务报错在 `server-error.log`。迁移时复制源码和需要保留的 `data` 文件夹即可，不需要复制 `node_modules`。
+Connections express relationships; they do not execute scripts or run workflows.
 
-Windows 启动器兼容系统自带的 PowerShell 5.1。修改 `.ps1` 文件时请保留 **UTF-8 with BOM** 编码，以免中文被误读并引发“缺少引号”等解析错误。
+## Quick start
 
-## 操作
+Install **Node.js 22 or later**, including npm, then run:
 
-- 左侧新建和切换任务，每个任务拥有独立画布。
-- 底部添加待办、Markdown 文档、便签、链接、图片或附件。
-- 点击底部“文件夹”，填写标题、文件夹完整路径和备注，点击卡片或编辑器里的“打开文件夹”即可打开。支持中文、空格以及 Windows“复制为路径”带上的引号；也可在链接编辑器中切换“网页链接 / 本地文件夹”。路径自动保存，只引用原目录，不复制或上传其中的文件。当前支持 Windows 本机目录；迁移电脑后可修改路径。
-- 打开目录后会按完整路径定位对应的资源管理器窗口，恢复最小化状态并请求前台显示。Windows 拒绝切换焦点时，页面提示从任务栏查看。
-- 双击卡片打开编辑器，拖动卡片调整位置。
-- 点击卡片右侧的小圆点，再点击目标卡片，建立关联。点击连线编辑说明或删除。
-- 待办可直接勾选；Markdown 支持编辑、预览和下载。
-- 文件可以直接拖入画布；截图可以用 Ctrl + V 粘贴。单个附件最大 25 MB。
-- 「附件」菜单可选择「导入附件副本」或「添加本地文件」。导入及拖放会复制文件，卡片标记为「附件副本」；本地文件仅记录完整路径，打开和修改的都是原文件，移动或删除后需更新路径。
-- 附件和本地文件均提供「打开文件」及「打开所在文件夹」，由 Windows 默认程序打开或在资源管理器中选中。下载副本保留在编辑器和卡片菜单。程序、脚本和快捷方式请通过所在文件夹自行查看。
-- 旧附件首次打开或定位时会生成带扩展名的可打开文件，原存储文件保留。之后打开、下载和备份都读取同一份可打开副本，外部编辑不会被再次打开操作覆盖。
-- 拖动空白处平移；滚轮移动；Ctrl + 滚轮缩放；右下角适应全部内容。
-- 画布和列表视图显示相同内容。
-- 顶部可编辑目标、下一步、完成或等待状态。任务菜单支持归档；左下角可查看并恢复归档任务。
-- 左侧搜索匹配任务名、卡片内容和待办文字。
-- 左下角菜单可以打开数据文件夹、导出包含附件的 JSON 备份。
+```sh
+git clone https://github.com/msly5/workdesk.git
+cd workdesk
+npm ci
+npm start
+```
 
-## 数据在哪里
+Open **http://127.0.0.1:4317**. Keep the terminal open and press **Ctrl+C** there to stop the service. Dependency installation requires internet access; the workspace can run offline afterward.
 
-所有数据在本目录的 **data** 文件夹：
+For a background service, use the included launchers instead:
 
-- `state.json`：任务、卡片内容、连线和画布位置。
-- `state.backup.json`：上一次保存的状态。
-- `files` 和 `files.json`：附件原始字节和索引。
-- 新附件使用 `files/<附件 ID>--<文件名>` 保存，保留扩展名；兼容旧版无扩展名的文件。本地文件引用不复制原文件，导出的备份只记录路径，迁移电脑后可能需要重新指定。
-- `tasks/<任务 ID>/docs`：Markdown 卡片的 `.md` 副本，内容由工作台编辑器同步写入。
+| Platform | Start | Stop |
+| --- | --- | --- |
+| Windows | Double-click `start.cmd` | Double-click `stop.cmd` |
+| macOS | Double-click `start.command` | Double-click `stop.command` |
 
-可以在服务停止后复制整个 `data` 文件夹进行备份或迁移。导出的 JSON 也包含附件，首版暂未提供 JSON 导入界面。请保留原始 data 文件夹。
+The launchers check Node.js, install missing dependencies and open the browser. Closing the browser does not stop the background service. This is a browser-based application, not a native macOS `.app`.
 
-请在网页内或通过 MCP 编辑 Markdown；本地 `.md` 是导出副本，外部修改不会自动同步回画布。移除卡片或归档任务不会清理附件文件，以便保留资料。
+On macOS, if a ZIP download loses script permissions, run `chmod +x start.command stop.command` in the project directory. You can also run `bash start.command` from a terminal configured with Node.js. Standard Node.js and common Homebrew paths are supported; custom environments such as nvm may need that terminal route.
 
-更改自动保存。未保存时关闭页面会提示。保存失败会在顶部显示，点击可重试。网页空闲时约每 2 秒同步其他窗口或 AI 的修改；打开编辑器、对话框或拖动时暂停刷新。不同字段的并发修改会自动合并，同一字段冲突会保留页面输入和服务端内容，点击顶部状态可导出页面备份后载入最新内容。
+The macOS launcher only reuses the service recorded for this project directory. If the port is occupied, stop the other service or choose another port, for example `WORKDESK_PORT=4318 ./start.command`. Use Ctrl+C to stop a service started with `npm start`; the stop launcher only stops the matching service it manages. Startup diagnostics appear in the launcher window, `install.log` and `server-error.log`.
 
-## 连接本地 AI 智能体
+## Using the workspace
 
-MCP 服务随工作台一同启动，地址：**`http://127.0.0.1:4317/mcp`**，传输方式为 **Streamable HTTP**。网页右上角「连接 AI」提供地址、配置下载和使用示例。只监听本机；不需要 API Key。连接的智能体可读取和修改工作台资料，请在你信任的客户端中添加。
+Create a task in the left sidebar and add cards from the bottom toolbar. Double-click a card to open its inspector. Click a card's connection handle, then another card, to link them; click the line to edit its label or remove it. To-dos can be checked directly on the canvas.
 
-支持 URL 的客户端可参考 `mcp-config.json`（不同客户端可能要求额外填写 `type: "http"` 或在界面选择传输方式）：
+Drag empty canvas space to pan, scroll to move, and use **Ctrl+scroll** to zoom; macOS also supports **Cmd+scroll**. Use the fit-content button to bring cards into view. **Ctrl+S / Cmd+S** saves immediately, and **Ctrl+V / Cmd+V** pastes a screenshot when you are not editing a text field.
+
+### File copies and local references
+
+**Import attachment copy** and drag-and-drop copy files into Workdesk's `data` directory. Opening one of these cards edits the Workdesk copy. Later downloads and backups read that same copy, including external edits.
+
+**Add local file** records an absolute path without copying the file. Opening it edits the original. Folder cards likewise record a directory path without copying its contents. Update these paths if files move or you migrate to another computer. On macOS, select a file or folder in Finder and press **Option+Cmd+C** to copy its path.
+
+Both attachment and local-file cards can open a file with its default application or reveal it in Explorer/Finder. Program, script and installer types blocked from direct opening can be inspected through **Open containing folder** instead. Older extensionless attachments are preserved; the first open/reveal operation creates a named copy used by subsequent opens, downloads and backups.
+
+### Limits and saving
+
+| Item | Limit |
+| --- | --- |
+| Card body | 200,000 characters, measured as JavaScript string length |
+| Browser attachment upload | 25 MiB per file |
+| MCP attachment upload | 4 MiB per file |
+| MCP attachment read | 256 KiB by default; up to 4 MiB per request |
+| MCP task/card list | 50 entries by default; up to 100 per page |
+| Atomic card batch | 100 operations and 2 MiB of arguments |
+
+The editor shows remaining body capacity. An oversized paste is rejected as a whole with an explanation, rather than silently truncated. An oversized input-method draft remains in the page and can be downloaded in full; shorten it to resume saving. Some emoji count as two characters toward the limit.
+
+The browser checks for revisions about every two seconds while idle and fetches the workspace only when it changes. Read-only Markdown previews and activity panels update automatically. Editing, text selection, input-method composition, dialogs and dragging pause refreshes to protect your interaction.
+
+Changes to independent fields can merge. Concurrent changes to the same field produce a conflict instead of silently overwriting either version. The save indicator offers a page backup before loading the latest state. Unsaved changes also trigger a browser warning when closing the page. Markdown copies are rewritten only when their content changes, not when you pan the canvas or rename a task.
+
+## Connect an AI client
+
+Start Workdesk first. The **Connect AI** button provides the local endpoint, example configuration and a configuration download. These examples do not automatically configure your AI client.
+
+### Streamable HTTP
+
+Use **`http://127.0.0.1:4317/mcp`** with a client that supports Streamable HTTP:
 
 ```json
 {
   "mcpServers": {
-    "workdesk": { "url": "http://127.0.0.1:4317/mcp" }
+    "workdesk": {
+      "url": "http://127.0.0.1:4317/mcp"
+    }
   }
 }
 ```
 
-只支持命令启动的客户端可参考 `mcp-stdio-config.json`：
+See [mcp-config.json](mcp-config.json). Client formats vary: some require `"type": "http"` or a transport selection in their settings.
+
+### stdio bridge
+
+For a client that launches MCP servers as commands:
 
 ```json
 {
   "mcpServers": {
     "workdesk": {
       "command": "node",
-      "args": ["D:/AICode/workdesk/mcp-stdio.mjs"]
+      "args": ["/absolute/path/to/workdesk/mcp-stdio.mjs"]
     }
   }
 }
 ```
 
-两种连接都需要先启动工作台。stdio 入口只桥接同一份 HTTP 服务，不会创建第二个数据进程。更改端口时，更新 HTTP URL；stdio 可在客户端环境变量中设置 `WORKDESK_MCP_URL=http://127.0.0.1:新端口/mcp`。迁移目录后更新 `args` 中的绝对路径。
+On Windows, use an absolute path such as `C:/path/to/workdesk/mcp-stdio.mjs`. See [mcp-stdio-config.json](mcp-stdio-config.json). If the client cannot find `node`, set `command` to the executable's absolute path.
 
-试着对智能体说：「在本地工作台里新建一个本周工作任务，放一份会议记录文档，再列出三个待办。」或「读取任务里的工作记录，补充今天的进度，把已完成的行动勾上。」配置只写成了示例文件，尚未自动加入你的智能体客户端。
+Both transports require the workspace service to be running. The stdio entry point bridges to that same HTTP service; it does not start a second data store. After changing ports, update the HTTP URL or set `WORKDESK_MCP_URL` in the stdio client's environment, for example `http://127.0.0.1:4318/mcp`. Update the script path if the project moves.
 
-| 工具 | 用途 |
+Try asking your agent: “Create a task for this week's work, add a meeting-notes document and a to-do list with three actions.” Or: “Read the notes in this task, add today's progress and check off the completed actions.”
+
+### MCP coverage
+
+| Tools | Purpose |
 | --- | --- |
-| `list_tasks` / `get_task` | 搜索任务、读取完整画布 |
-| `create_task` / `update_task` | 新建、改名、目标、下一步、状态与归档/恢复 |
-| `list_cards` / `get_card` | 查询卡片与完整内容 |
-| `create_card` / `update_card` / `delete_card` | 文档、便签、链接、待办、位置与卡片移除 |
-| `set_todo_item` / `remove_todo_item` | 新增、修改、勾选或移除待办项 |
-| `connect_cards` / `delete_connection` | 建立、更新或移除卡片关联 |
-| `attach_file` | base64 上传附件并添加卡片，单次最大 4 MB |
+| `list_tasks`, `get_task` | Search tasks and read a complete task canvas |
+| `create_task`, `update_task` | Create tasks; update titles, goals, next actions and status; archive or restore |
+| `list_cards`, `get_card` | Search and paginate card summaries; read complete card content |
+| `create_card`, `update_card`, `delete_card` | Manage card content, properties and positions; remove cards and their connections |
+| `batch_cards` | Atomically create, update, delete or duplicate cards within one task |
+| `set_todo_item`, `remove_todo_item` | Add, edit, check or remove individual to-do items |
+| `connect_cards`, `delete_connection` | Create or relabel connections, or remove them |
+| `attach_file` | Upload base64-encoded bytes and add an attachment/image card |
+| `read_attachment` | Read an uploaded attachment in bounded chunks |
 
-另有只读资源 `workdesk://tasks` 和 `workdesk://tasks/{taskId}`。工具返回当前 `revision`；写入时可传 `expected_revision`，过期会拒绝并提示重新读取。所有写入使用同一队列并持久化，Markdown 同时落盘。任务通过归档保留；移除卡片会移除其连线，原始附件不清理。MCP 不读取任意本机文件或执行系统命令。
+There are **16 tools, one fixed resource and two resource templates**:
 
-`create_card` / `update_card` 的 `file_path` 可保存本地原文件引用，仅适用于 `file` 卡片，与 `asset_id` 互斥。MCP 不检查或读取该文件，也不会自动打开；用户在网页点击后才由本机服务处理。示例：`{"task_id":"任务 ID","type":"file","title":"工作报告","file_path":"D:\\资料\\报告.docx"}`。
+| Resource or template | Content |
+| --- | --- |
+| `workdesk://tasks` | First 50 unarchived tasks |
+| `workdesk://tasks/{taskId}` | Complete task, cards and connections |
+| `workdesk://tasks/pages/{offset}/{limit}` | Paginated unarchived tasks |
 
-创建或修改本地文件夹卡片时，使用 `type: "link"` 和 `folder_path`（例如 `D:\\项目资料`），不能同时填写 `url`。智能体仅保存路径引用，打开目录需要用户在网页点击；MCP 不会读取该目录内容或启动资源管理器。
+List tools return `total`, `has_more` and `next_offset`. Task-list resources provide `next_uri` when another page exists. Use the list tools for search and status/type filters.
 
-## 首版范围
+Tools return the current `revision`. Pass it as `expected_revision` when writing to reject stale changes, then reread if it no longer matches. Writes share one persistence queue. `update_card.content` replaces the whole body, so read the latest card before editing; omitted fields are preserved. Tasks are archived rather than permanently deleted. Removing a card returns its removed card and connection data, while retaining attachment files.
 
-这是一个手动与智能体协作的本地工作台。连线用来表达资料或步骤关联，暂不执行脚本或自动化流程。AI 通过外部 MCP 客户端操作，本应用不内置模型调用。仅监听本机地址，不需要账号，也不加载在线字体、图片或脚本。
+`batch_cards` runs operations in order and saves nothing if any operation fails. A successful batch advances the revision once. Give a `create` or `duplicate` operation a `ref` and use `card_ref` to address it later in the same batch; use `card_id` for an existing card. Duplicating keeps attachment references within the same task and generates fresh to-do IDs; it does not copy connections.
 
-内置任务为示例，可以归档，再创建自己的任务。
+```json
+{
+  "task_id": "your-task-id",
+  "expected_revision": 12,
+  "operations": [
+    {
+      "operation": "create",
+      "type": "markdown",
+      "title": "Meeting notes",
+      "content": "# Meeting notes",
+      "ref": "minutes"
+    },
+    { "operation": "update", "card_ref": "minutes", "x": 50, "y": 60 },
+    {
+      "operation": "create",
+      "type": "todo",
+      "title": "Follow-up actions",
+      "items": [{ "text": "Summarize decisions", "done": false }]
+    }
+  ]
+}
+```
 
-## 验证
+`read_attachment` requires `task_id` and `asset_id`. It returns `base64`, `offset`, `next_offset`, `total_bytes` and `has_more`; use the returned `next_offset` for the next chunk. UTF-8 text also receives a `text` field when the chunk contains valid text, with sequential reads accounting for character boundaries. A complete supported PNG, JPEG, GIF, WebP or AVIF image also returns MCP image content. PDF and Office files are returned as bytes, without text extraction.
 
-运行 `npm test` 检查持久化、任务隔离、Markdown 落盘、并发合并、版本冲突、附件往返、跨站与路径保护，以及真实 MCP 客户端的 HTTP / stdio 操作。
+Local references use `file_path` on a `file` card or `folder_path` on a `link` card. `file_path` is mutually exclusive with `asset_id`; `folder_path` is mutually exclusive with `url`. MCP only stores these path references: it does not read, open or validate the original files or directories. `read_attachment` reads uploaded Workdesk attachments, not arbitrary paths or `file_path` references. File opening happens when a person clicks the corresponding browser action.
+
+## Data, privacy and backups
+
+Workdesk listens on `127.0.0.1`, serves its interface locally and stores workspace data in the project's **`data`** directory. It does not require an account or API key and does not include model calls. Its interface does not load hosted fonts, images or scripts.
+
+**Connecting an external AI client changes the data boundary.** That client can read and modify workspace content through MCP. Content an agent reads is provided to the client and may be sent to its AI service provider, depending on the client's configuration. Only connect clients you trust with that content. MCP does not expose arbitrary local-file reads or system-command execution.
+
+| Path under `data/` | Contents |
+| --- | --- |
+| `state.json` | Tasks, cards, connections and canvas positions |
+| `state.backup.json` | State from the previous save, not a full version history |
+| `files/` and `files.json` | Attachment bytes and their index |
+| `tasks/<task-id>/docs/` | Markdown copies maintained by Workdesk |
+
+New attachment names preserve extensions as `<attachment-id>--<filename>`; older extensionless files remain supported. Edit Markdown through the browser or MCP: the `.md` files are exported copies, and edits made directly to them are not imported into the canvas. Removing a card or archiving a task does not delete stored attachments.
+
+To back up or migrate, **stop the service and copy the entire `data` directory**. The workspace menu also exports a JSON backup containing workspace state and copied attachments. **There is currently no JSON import interface**, so keep the original data directory. Local-file references contain paths only: neither a data-directory copy nor a JSON export includes those original files or folder contents.
+
+## Development and platform support
+
+```sh
+npm test
+```
+
+Tests cover persistence, task isolation, incremental saves and conflicts, rollback, conditional Markdown writes, attachment round trips and UTF-8 chunks, atomic batches, pagination, local-access protections, and HTTP/stdio MCP clients. macOS launcher tests use temporary directories to check start, reuse, stop and process identity. File-opening tests stub the OS boundary rather than launching desktop applications.
+
+Windows and macOS have launcher and Explorer/Finder integrations. Tests that require a particular OS are skipped elsewhere; a passing macOS suite does not establish Windows runtime compatibility. Linux does not have the provided desktop file/folder-opening integration or launchers, and is not claimed as a fully validated platform. Windows PowerShell scripts target the built-in PowerShell 5.1; preserve their UTF-8 BOM when editing them.
+
+## License
+
+Workdesk is available under the [MIT License](LICENSE). Dependencies and other third-party components retain their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

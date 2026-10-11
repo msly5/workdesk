@@ -1,6 +1,7 @@
 data/
 *.log
 .server.pid
+.server.start.lock
 .test-artifacts/
 node_modules/
 
