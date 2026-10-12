@@ -66,7 +66,6 @@ export class Canvas {
   renderEdges() {
     const task = this.getTask();
     if (!task) { this.paths.innerHTML = ''; return; }
-    const heights = new Map([...this.nodesEl.querySelectorAll('.node')].map(el => [el.dataset.id, el.offsetHeight]));
     this.paths.innerHTML = task.edges.map(edge => {
       const a = task.nodes.find(n => n.id === edge.source), b = task.nodes.find(n => n.id === edge.target);
       if (!a || !b) return '';
@@ -79,12 +78,40 @@ export class Canvas {
       const label = this.escape(edge.label || '');
       const description=label || this.escape(t('点击编辑卡片关联'));
       return '<g class="edge-group" data-edge="' + edge.id + '" aria-label="' + this.escape(t('卡片关联')) + '"><title>'+description+'</title><path class="edge-hit" d="' + d + '"/><path class="edge-path" d="' + d + '"/>' + (label ? '<text class="edge-label" x="' + ((x1 + x2) / 2) + '" y="' + ((y1 + y2) / 2 - 10) + '" text-anchor="middle">' + label + '</text>' : '') + '</g>';
-    }).join('');
+    }).join('') + this.connectionPreview();
+  }
+  connectionPreview() {
+    const drag = this.drag;
+    if (drag?.kind !== 'connection' || !drag.moved) return '';
+    const source = drag.task.nodes.find(node => node.id === drag.source);
+    if (!source) return '';
+    const target = drag.task.nodes.find(node => node.id === drag.target);
+    const x1 = source.x + source.width, y1 = source.y + 29;
+    const x2 = target ? (target.x >= x1 ? target.x : target.x + target.width) : drag.point.x;
+    const y2 = target ? target.y + 29 : drag.point.y;
+    const curve = Math.max(35, Math.abs(x2 - x1) * .48);
+    return '<path class="edge-preview" d="M ' + x1 + ' ' + y1 + ' C ' + (x1 + curve) + ' ' + y1 + ', ' + (x2 - curve) + ' ' + y2 + ', ' + x2 + ' ' + y2 + '"/>';
+  }
+  connectionTarget(event, drag) {
+    const el = document.elementFromPoint(event.clientX, event.clientY)?.closest('.node');
+    const id = el?.dataset.id;
+    return el && this.nodesEl.contains(el) && id !== drag.source && drag.task.nodes.some(node => node.id === id) ? id : null;
+  }
+  cancelConnectionDrag() {
+    if (this.drag?.kind === 'connection') this.pointerUp({ pointerId:this.drag.pointerId, type:'pointercancel' });
   }
   pointerDown(event) {
     if (this.drag || (event.button !== 0 && event.button !== 1)) return;
-    if (event.button === 0 && (this.isConnecting() || event.target.closest(INTERACTIVE))) return;
     const task = this.getTask(); if (!task) return;
+    const handle = event.button === 0 ? event.target.closest('[data-connect]') : null;
+    if (handle && task.nodes.some(node => node.id === handle.dataset.connect)) {
+      event.preventDefault();
+      this.onConnectionStart(handle.dataset.connect);
+      this.drag = { kind:'connection', task, source:handle.dataset.connect, captureEl:this.el, pointerId:event.pointerId, startX:event.clientX, startY:event.clientY, moved:false, target:null, point:this.point(event.clientX,event.clientY) };
+      this.el.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (event.button === 0 && (this.isConnecting() || event.target.closest(INTERACTIVE))) return;
     const nodeEl = event.button === 0 ? event.target.closest('.node') : null;
     const node = nodeEl ? task.nodes.find(n => n.id === nodeEl.dataset.id) : null;
     if (event.button === 0) {
@@ -101,11 +128,19 @@ export class Canvas {
   pointerMove(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
     const task = this.getTask();
-    if (task !== this.drag.task) { this.pointerUp(event); return; }
+    if (task !== this.drag.task) { this.pointerUp({pointerId:event.pointerId,type:'pointercancel'}); return; }
     event.preventDefault();
     const dx = event.clientX - this.drag.startX, dy = event.clientY - this.drag.startY;
     if (!this.drag.moved && Math.hypot(dx, dy) < 4) return;
     this.drag.moved = true;
+    if (this.drag.kind === 'connection') {
+      if (!task.nodes.some(node => node.id === this.drag.source)) { this.cancelConnectionDrag(); return; }
+      this.drag.point = this.point(event.clientX,event.clientY);
+      this.drag.target = this.connectionTarget(event,this.drag);
+      this.nodesEl.querySelectorAll('.node').forEach(el => el.classList.toggle('connection-target',el.dataset.id === this.drag.target));
+      this.renderEdges();
+      return;
+    }
     if (this.drag.node) {
       this.drag.nodeEl.classList.add('dragging');
       this.drag.node.x = Math.round(this.drag.x + dx / task.viewport.zoom);
@@ -121,13 +156,22 @@ export class Canvas {
   }
   pointerUp(event) {
     if (!this.drag || event.pointerId !== this.drag.pointerId) return;
+    if (this.drag.kind === 'connection' && event.type === 'pointerup') {
+      this.pointerMove(event);
+      if (!this.drag) return;
+    }
     const drag = this.drag;
     this.drag = null;
     this.wasDragged = drag.moved;
     drag.nodeEl?.classList.remove('dragging');
     this.el.classList.remove('panning');
     if (drag.captureEl.hasPointerCapture(event.pointerId)) drag.captureEl.releasePointerCapture(event.pointerId);
-    if (drag.moved) this.onChange();
+    if (drag.kind === 'connection') {
+      this.nodesEl.querySelectorAll('.connection-target').forEach(el => el.classList.remove('connection-target'));
+      if (event.type === 'pointerup' && drag.moved && this.getTask() === drag.task && drag.task.nodes.some(node => node.id === drag.source) && drag.target) this.onConnect(drag.source,drag.target);
+      this.onConnectionEnd();
+      this.renderEdges();
+    } else if (drag.moved) this.onChange();
     setTimeout(() => { this.wasDragged = false; }, 0);
   }
   wheel(event) {

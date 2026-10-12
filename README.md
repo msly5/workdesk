@@ -54,7 +54,7 @@ The macOS launcher only reuses the service recorded for this project directory. 
 
 ## Using the workspace
 
-Create a task in the left sidebar and add cards from the bottom toolbar. Double-click a card to open its inspector. Click a card's connection handle, then another card, to link them; click the line to edit its label or remove it. To-dos can be checked directly on the canvas.
+Create a task in the left sidebar and add cards from the bottom toolbar. Double-click a card to open its inspector. Drag a card's right-side connection handle onto another card and release to link them. A preview line follows the pointer and highlights the target; release over empty space or press Esc to cancel. Click a line to edit its label or remove it. To-dos can be checked directly on the canvas.
 
 Drag empty canvas space to pan, scroll to move, and use **Ctrl+scroll** to zoom; macOS also supports **Cmd+scroll**. Use the fit-content button to bring cards into view. **Ctrl+S / Cmd+S** saves immediately, and **Ctrl+V / Cmd+V** pastes a screenshot when you are not editing a text field.
 

@@ -233,9 +233,9 @@ function renderCard(node) {
   }
   return '<article class="node node-' + node.type + extra + (selected === node.id ? ' selected' : '') + '" data-id="' + node.id + '" style="left:' + node.x + 'px;top:' + node.y + 'px;width:' + node.width + 'px" tabindex="0" aria-label="' + esc(t('{type}：{title}',{type:type[0],title:node.title})) + '">' +
     '<div class="node-header"><span class="node-type-icon">' + icon(type[1]) + '</span><span class="node-title">' + esc(node.title || type[0]) + '</span><button class="node-more" data-node-menu="' + node.id + ("\" aria-label=\"" + esc(t("卡片菜单")) + "\">") + icon('more') + '</button></div>' +
-    '<div class="node-body">' + body + '</div><div class="node-footer">' + footer + '</div><button class="node-handle" data-connect="' + node.id + ("\" title=\"" + esc(t("从这里连接到其他卡片")) + "\" aria-label=\"" + esc(t("从这张卡片建立连线")) + "\"></button></article>");
+    '<div class="node-body">' + body + '</div><div class="node-footer">' + footer + '</div><button class="node-handle" data-connect="' + node.id + ("\" title=\"" + esc(t("按住并拖到另一张卡片")) + "\" aria-label=\"" + esc(t("从这张卡片建立连线")) + "\"></button></article>");
 }
-const canvas = new Canvas({getTask:activeTask,renderCard,escape:esc,isConnecting:() => !!connecting,onSelect:selectNode,onEdit:openEditor,onChange:markChanged});
+const canvas = new Canvas({getTask:activeTask,renderCard,escape:esc,isConnecting:() => !!connecting,onSelect:selectNode,onEdit:openEditor,onChange:markChanged,onConnectionStart:id=>startConnection(id,true),onConnectionEnd:cancelConnection,onConnect:(source,target)=>finishConnection(target,source)});
 function renderList() {
   const task = activeTask();
   $('#list-surface').innerHTML = task ? '<div class="list-heading"><span>'+esc(t('全部卡片'))+'</span><span>'+esc(cardCount(task.nodes.length))+' · '+esc(t('双击卡片编辑'))+'</span></div><div class="list-grid">'+task.nodes.map(renderCard).join('')+'</div>' : '';
@@ -403,19 +403,22 @@ function deleteNode(id) {
   cancelConnection(); activity('移除卡片「{title}」',task,{title:node.title}); markChanged(); renderWorkspace();
   toast(t("卡片已移除"), {action:() => { restoreCard(task,index,node,edges); activity('恢复卡片「{title}」',task,{title:node.title}); markChanged(); renderWorkspace(); }});
 }
-function startConnection(id) {
+function startConnection(id, dragging = false) {
+  canvas.cancelConnectionDrag();
   if (view !== 'canvas') setView('canvas');
   connecting = id; closeInspector(); selectNode(id);
+  $('#connection-hint').textContent = t(dragging ? '拖到目标卡片后松开，Esc 取消' : '点击目标卡片，建立关联');
   $('#workspace').classList.add('connecting'); $('#connection-banner').classList.remove('hidden');
 }
 function cancelConnection() {
+  canvas.cancelConnectionDrag();
   connecting = null; $('#workspace').classList.remove('connecting'); $('#connection-banner').classList.add('hidden');
 }
-function finishConnection(target) {
+function finishConnection(target, source = connecting) {
   const task = activeTask();
-  if (!connecting || connecting === target) return;
-  if (task.edges.some(e => e.source === connecting && e.target === target)) { toast(t("这两张卡片已经有关联")); cancelConnection(); return; }
-  task.edges.push({id:uid(),source:connecting,target,label:''}); activity('建立卡片关联'); cancelConnection(); markChanged(); canvas.renderEdges(); toast(t("关联已建立 · 点击连线可以编辑"));
+  if (!source || source === target || !task?.nodes.some(node=>node.id===source) || !task.nodes.some(node=>node.id===target)) return;
+  if (task.edges.some(e => e.source === source && e.target === target)) { toast(t("这两张卡片已经有关联")); cancelConnection(); return; }
+  task.edges.push({id:uid(),source,target,label:''}); activity('建立卡片关联'); cancelConnection(); markChanged(); canvas.renderEdges(); toast(t("关联已建立 · 点击连线可以编辑"));
 }
 function closePopover() { $('#popover').classList.add('hidden'); }
 function popover(anchor, entries) {
@@ -591,7 +594,7 @@ function connectAI() {
 }
 function help() {
   showModal(t("让工作，慢慢有序"),("<p class=\"modal-subtitle\">" + esc(t("每个任务都有自己的画布，所有内容保存在本机。")) + "</p>") + [
-    [t("新建任务"),'N'],[t("搜索任务或卡片"),'/'],[t("添加卡片"),t("底部工具栏")],[t("编辑卡片"),t("双击卡片")],[t("移动卡片"),t("拖动卡片")],[t("移动画布"),t("拖动空白处 / 中键拖动 / 滚轮")],[t("缩放画布"),modifier + t(" + 滚轮 / 触控板捏合")],[t("建立关联"),t("卡片右侧圆点 → 目标卡片")],[t("粘贴截图"),modifier + ' + V'],[t("取消选择或连线"),'Esc'],[t("保存当前更改"),modifier + ' + S'],[t("调整右侧栏"),t("拖动左边缘；双击恢复宽度")]
+    [t("新建任务"),'N'],[t("搜索任务或卡片"),'/'],[t("添加卡片"),t("底部工具栏")],[t("编辑卡片"),t("双击卡片")],[t("移动卡片"),t("拖动卡片")],[t("移动画布"),t("拖动空白处 / 中键拖动 / 滚轮")],[t("缩放画布"),modifier + t(" + 滚轮 / 触控板捏合")],[t("建立关联"),t("拖动卡片右侧圆点到目标卡片")],[t("粘贴截图"),modifier + ' + V'],[t("取消选择或连线"),'Esc'],[t("保存当前更改"),modifier + ' + S'],[t("调整右侧栏"),t("拖动左边缘；双击恢复宽度")]
   ].map(([name,key])=>'<div class="help-row"><strong>'+name+'</strong><kbd>'+key+'</kbd></div>').join('')+("<p class=\"help-note\">" + esc(t("文件也可以直接拖到画布里，单个附件最大 25 MB。")) + "<br>" + esc(t("左下角菜单可打开数据文件夹、导出包含附件的备份。")) + "<br>" + esc(t("首版用于手动组织工作，连线表示关联关系。")) + "</p>"),("<button class=\"primary\" data-close-modal>" + esc(t("开始整理")) + "</button>"));
 }
 function showHistory() {
@@ -681,7 +684,11 @@ window.addEventListener('blur',()=>activePointers.clear());
 document.addEventListener('click',event=>{
   const target = event.target, card = target.closest('.node');
   const find = selector => target.closest(selector);
-  if (find('[data-connect]')) return startConnection(find('[data-connect]').dataset.connect);
+  if (find('[data-connect]')) {
+    event.preventDefault();
+    if(event.detail===0)startConnection(find('[data-connect]').dataset.connect);
+    return;
+  }
   if (find('[data-node-menu]')) return nodeMenu(find('[data-node-menu]'),find('[data-node-menu]').dataset.nodeMenu);
   if (find('[data-edit]')) {event.preventDefault();return openEditor(find('[data-edit]').dataset.edit,'edit');}
   if (find('[data-preview]')) return previewImage(find('[data-preview]').dataset.preview);
@@ -762,6 +769,8 @@ document.addEventListener('keydown',event=>{
   const editing=event.target.closest('input,textarea,select,[contenteditable="true"]');
   if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();flushSave().then(()=>toast(t("已保存到本机"))).catch(()=>{});return;}
   if(event.key==='Escape'){cancelConnection();closePopover();if(!$('#modal').open)closeInspector();selectNode(null);return;}
+  if((event.key==='Enter' || event.key===' ') && event.target.matches('[data-connect]')){event.preventDefault();startConnection(event.target.dataset.connect);return;}
+  if(event.key==='Enter' && connecting && event.target.matches('.node')){event.preventDefault();finishConnection(event.target.dataset.id);return;}
   if(editing||$('#modal').open)return;
   if(event.key.toLowerCase()==='n'&&!event.ctrlKey&&!event.metaKey){event.preventDefault();taskDialog();}
   else if(event.key==='/'){event.preventDefault();$('#task-search').focus();}

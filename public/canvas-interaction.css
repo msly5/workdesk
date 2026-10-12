@@ -15,3 +15,22 @@
 .canvas {
   overscroll-behavior: none;
 }
+
+.node-handle { touch-action:none; }
+.node-handle::before { content:''; position:absolute; inset:-7px; }
+.node-handle:focus-visible { opacity:1; }
+.canvas .node.connection-target {
+  border-color:var(--purple);
+  box-shadow:0 0 0 3px #7367df35;
+}
+.edge-preview {
+  fill:none;
+  stroke:var(--purple);
+  stroke-width:2;
+  stroke-dasharray:6 4;
+  marker-end:url(#edge-arrow);
+  pointer-events:none;
+}
+.connecting .canvas { cursor:crosshair; }
+.connection-banner { width:max-content; max-width:calc(100% - 24px); white-space:normal; }
+.connection-banner button { flex-shrink:0; white-space:nowrap; }

@@ -6,7 +6,7 @@ function element() {
   const classes = new Set(), captures = new Set(), listeners = new Map();
   return {
     style: {}, dataset: {}, clientWidth: 800, clientHeight: 600,
-    classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name) },
+    classList: { add: name => classes.add(name), remove: name => classes.delete(name), contains: name => classes.has(name), toggle(name,force) { if(force)classes.add(name);else classes.delete(name); } },
     addEventListener(name, listener) { listeners.set(name, listener); },
     emit(name, event) { listeners.get(name)?.(event); },
     setPointerCapture: id => captures.add(id),
@@ -20,10 +20,15 @@ function element() {
 function fixture(t) {
   const el = element(), nodeEl = element(), nodesEl = element(), windowEl = element();
   nodeEl.dataset.id = 'doc';
+  nodeEl.closest = selector => selector === '.node' ? nodeEl : null;
+  const cardElements = [nodeEl];
+  nodesEl.contains = card => cardElements.includes(card);
+  nodesEl.querySelectorAll = selector => selector === '.node' ? cardElements : selector === '.connection-target' ? cardElements.filter(card=>card.classList.contains('connection-target')) : [];
   el.parentElement = { style: {} };
   const elements = { '#canvas': el, '#canvas-world': element(), '#nodes': nodesEl, '#edge-paths': element() };
   const original = { document: globalThis.document, window: globalThis.window, ResizeObserver: globalThis.ResizeObserver };
-  globalThis.document = { querySelector: selector => elements[selector] };
+  let hit = null;
+  globalThis.document = { querySelector: selector => elements[selector], elementFromPoint: () => hit };
   globalThis.window = windowEl;
   globalThis.ResizeObserver = class { observe() {} };
   t.after(() => {
@@ -34,19 +39,24 @@ function fixture(t) {
   const node = { id: 'doc', x: 100, y: 200, width: 310 };
   let task = { nodes: [node], edges: [], viewport: { x: 0, y: 0, zoom: 1 } };
   let changes = 0;
-  const selected = [], edited = [];
+  const selected = [], edited = [], connections = [], started = [];
+  let ended = 0;
   const canvas = new Canvas({
     getTask: () => task,
     isConnecting: () => false,
     onSelect: id => selected.push(id),
     onEdit: id => edited.push(id),
     onChange: () => changes++,
+    onConnectionStart: id => started.push(id),
+    onConnectionEnd: () => ended++,
+    onConnect: (source,target) => connections.push({source,target}),
   });
   canvas.updateTransform = () => {};
   canvas.renderEdges = () => {};
   const target = (interactive = null, onCard = true) => ({
     closest(selector) {
       if (selector === '.node') return onCard ? nodeEl : null;
+      if (selector === '[data-connect]') return null;
       return interactive && selector.includes(interactive) ? {} : null;
     },
   });
@@ -56,9 +66,100 @@ function fixture(t) {
     stopPropagation() { this.propagationStopped = true; },
     ...overrides,
   });
-  return { canvas, el, nodeEl, windowEl, node, task, selected, edited, target, event,
+  const handle = {dataset:{connect:'doc'},closest: selector=>selector==='[data-connect]'?handle:selector==='.node'?nodeEl:null};
+  const addTarget = (id='target') => {
+    const card = element();card.dataset.id=id;card.closest=selector=>selector==='.node'?card:null;cardElements.push(card);
+    task.nodes.push({id,x:600,y:300,width:310});return card;
+  };
+  return { canvas, el, nodeEl, windowEl, node, task, selected, edited, target, event, handle, addTarget, connections, started,
+    setHit: value=>{hit=value;}, ended:()=>ended,
     changes: () => changes, switchTask: next => { task = next; } };
 }
+
+test('拖动连接点预览连线，松到目标一次完成且不移动卡片或画布',t=>{
+  const f=fixture(t),target=f.addTarget();
+  f.task.viewport={x:30,y:40,zoom:.5};
+  const down=f.event({target:f.handle});f.canvas.pointerDown(down);
+  assert.equal(down.defaultPrevented,true);
+  assert.equal(f.el.hasPointerCapture(1),true);
+  assert.deepEqual(f.started,['doc']);
+  f.setHit(target);
+  f.canvas.pointerMove(f.event({clientX:350,clientY:210}));
+  assert.deepEqual(f.canvas.drag.point,{x:620,y:300});
+  assert.equal(target.classList.contains('connection-target'),true);
+  assert.match(f.canvas.connectionPreview(),/class="edge-preview"/);
+  assert.match(f.canvas.connectionPreview(),/M 410 229 .* 600 329/);
+  f.canvas.pointerUp(f.event({type:'pointerup',clientX:350,clientY:210}));
+  assert.deepEqual(f.connections,[{source:'doc',target:'target'}]);
+  assert.equal(f.ended(),1);
+  assert.equal(f.el.hasPointerCapture(1),false);
+  assert.equal(target.classList.contains('connection-target'),false);
+  assert.equal(f.canvas.connectionPreview(),'');
+  assert.deepEqual([f.node.x,f.node.y],[100,200]);
+  assert.deepEqual(f.task.viewport,{x:30,y:40,zoom:.5});
+  assert.equal(f.changes(),0);
+  const click=f.event();f.el.emit('click',click);assert.equal(click.propagationStopped,true);
+});
+
+test('连线松到空白、自身或其他区域不创建，轻点连接点也不留在连接模式',t=>{
+  const f=fixture(t);
+  for(const hit of [null,f.nodeEl,{dataset:{id:'outside'},closest(){return this;}}]) {
+    f.canvas.pointerDown(f.event({target:f.handle}));f.setHit(hit);
+    f.canvas.pointerMove(f.event({clientX:400}));
+    f.canvas.pointerUp(f.event({type:'pointerup',clientX:400}));
+    assert.equal(f.canvas.drag,null);assert.equal(f.canvas.connectionPreview(),'');
+  }
+  f.canvas.pointerDown(f.event({target:f.handle}));
+  f.canvas.pointerUp(f.event({type:'pointerup'}));
+  assert.equal(f.ended(),4);assert.deepEqual(f.connections,[]);assert.equal(f.changes(),0);
+});
+
+test('Esc、指针取消、失去捕获或窗口失焦清除预览和高亮，不提交连线',t=>{
+  const f=fixture(t),target=f.addTarget();f.setHit(target);
+  for(const reason of ['escape','pointercancel','lostpointercapture','blur']) {
+    f.canvas.pointerDown(f.event({target:f.handle}));
+    f.canvas.pointerMove(f.event({clientX:400}));
+    if(reason==='escape')f.canvas.cancelConnectionDrag();
+    else if(reason==='blur')f.windowEl.emit('blur');
+    else f.el.emit(reason,f.event({type:reason}));
+    f.canvas.pointerUp(f.event({type:'pointerup',clientX:400}));
+    assert.equal(f.canvas.drag,null,reason);
+    assert.equal(f.canvas.connectionPreview(),'',reason);
+    assert.equal(target.classList.contains('connection-target'),false,reason);
+    assert.equal(f.el.hasPointerCapture(1),false,reason);
+  }
+  assert.deepEqual(f.connections,[]);assert.equal(f.ended(),4);assert.equal(f.changes(),0);
+});
+
+test('连接手势只接受原指针，切换任务或移除端点后不提交',t=>{
+  const f=fixture(t),target=f.addTarget();f.setHit(target);
+  f.canvas.pointerDown(f.event({target:f.handle}));
+  f.canvas.pointerMove(f.event({pointerId:2,clientX:400}));
+  f.canvas.pointerUp(f.event({pointerId:2,type:'pointerup',clientX:400}));
+  assert.equal(f.canvas.drag.moved,false);
+  f.switchTask({nodes:[],edges:[],viewport:{x:0,y:0,zoom:1}});
+  f.canvas.pointerUp(f.event({type:'pointerup',clientX:400}));
+  assert.equal(f.canvas.drag,null);assert.deepEqual(f.connections,[]);
+  f.switchTask(f.task);
+  for(const removed of ['target','doc']) {
+    f.canvas.pointerDown(f.event({target:f.handle}));
+    f.canvas.pointerMove(f.event({clientX:400}));
+    f.task.nodes=f.task.nodes.filter(node=>node.id!==removed);
+    f.canvas.pointerUp(f.event({type:'pointerup',clientX:400}));
+    assert.equal(f.canvas.drag,null);assert.deepEqual(f.connections,[]);
+  }
+});
+
+test('以松开时位置命中目标，即使落在按钮上也只建立连线',t=>{
+  const f=fixture(t),target=f.addTarget();
+  f.canvas.pointerDown(f.event({target:f.handle}));
+  f.setHit(null);f.canvas.pointerMove(f.event({clientX:300}));
+  f.setHit({closest:selector=>selector==='.node'?target:null});
+  f.canvas.pointerUp(f.event({type:'pointerup',clientX:600}));
+  assert.deepEqual(f.connections,[{source:'doc',target:'target'}]);
+  f.canvas.pointerUp(f.event({type:'pointerup',clientX:600}));
+  assert.equal(f.connections.length,1);
+});
 
 test('拖动文档内容从按下时阻止选字，并按画布缩放计算位置', t => {
   const f = fixture(t);
