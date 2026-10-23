@@ -3,6 +3,7 @@ import { localizedActivity } from './messages-app.js';
 import { icon } from './icons.js';
 import { markdown, escapeHTML as esc, safeURL } from './markdown.js';
 import { Canvas } from './canvas.js';
+import { Minimap } from './minimap.js';
 import { initInspectorResize } from './inspector.js';
 import { restoreCard, mergeStates, updateInPlace, applyFormChanges } from './model.js';
 import { createChanges } from './changes.js';
@@ -87,7 +88,7 @@ async function flushSave() {
       await waitForComposition();
       const merged=mergeStates(snapshot,state,result.state);
       adoptState(merged); savedBase=structuredClone(result.state);
-      if(!canvas.drag)renderWorkspace();
+      if(!canvas.interacting)renderWorkspace();
       if(inspectorMode==='node')syncInspector();
       else if(inspectorMode==='history')renderHistory();
     })
@@ -101,7 +102,7 @@ function adoptState(next) {
   if(selected&&!activeNode()){selected=null;closeInspector();}
 }
 function canSyncRemote() {
-  if(!state||saving||dirty||uploading||canvas.drag||connecting||composing||activePointers.size||$('#modal').open)return false;
+  if(!state||saving||dirty||uploading||canvas.interacting||connecting||composing||activePointers.size||$('#modal').open)return false;
   if(document.body.classList.contains('resizing-inspector'))return false;
   if(document.activeElement?.closest('input,textarea,select,[contenteditable="true"]'))return false;
   if(window.getSelection()?.isCollapsed===false)return false;
@@ -236,6 +237,7 @@ function renderCard(node) {
     '<div class="node-body">' + body + '</div><div class="node-footer">' + footer + '</div><button class="node-handle" data-connect="' + node.id + ("\" title=\"" + esc(t("按住并拖到另一张卡片")) + "\" aria-label=\"" + esc(t("从这张卡片建立连线")) + "\"></button></article>");
 }
 const canvas = new Canvas({getTask:activeTask,renderCard,escape:esc,isConnecting:() => !!connecting,onSelect:selectNode,onEdit:openEditor,onChange:markChanged,onConnectionStart:id=>startConnection(id,true),onConnectionEnd:cancelConnection,onConnect:(source,target)=>finishConnection(target,source)});
+canvas.minimap = new Minimap({canvas});
 function renderList() {
   const task = activeTask();
   $('#list-surface').innerHTML = task ? '<div class="list-heading"><span>'+esc(t('全部卡片'))+'</span><span>'+esc(cardCount(task.nodes.length))+' · '+esc(t('双击卡片编辑'))+'</span></div><div class="list-grid">'+task.nodes.map(renderCard).join('')+'</div>' : '';
@@ -255,6 +257,7 @@ function selectTask(id) {
   $('#sidebar').classList.remove('open'); renderWorkspace(); markChanged();
 }
 function setView(mode) {
+  canvas.minimap.endDrag();
   view = mode;
   $('#canvas-view').classList.toggle('active', mode === 'canvas');
   $('#list-view').classList.toggle('active', mode === 'list');
@@ -264,6 +267,7 @@ function setView(mode) {
   $('#canvas-caption').parentElement.classList.toggle('hidden', mode !== 'canvas');
   $('#canvas-hint').classList.toggle('hidden', mode !== 'canvas');
   cancelConnection(); if (mode === 'list') renderList();
+  canvas.minimap.update();
 }
 function closeInspector() {
   finishComposition();
@@ -594,7 +598,7 @@ function connectAI() {
 }
 function help() {
   showModal(t("让工作，慢慢有序"),("<p class=\"modal-subtitle\">" + esc(t("每个任务都有自己的画布，所有内容保存在本机。")) + "</p>") + [
-    [t("新建任务"),'N'],[t("搜索任务或卡片"),'/'],[t("添加卡片"),t("底部工具栏")],[t("编辑卡片"),t("双击卡片")],[t("移动卡片"),t("拖动卡片")],[t("移动画布"),t("拖动空白处 / 中键拖动 / 滚轮")],[t("缩放画布"),modifier + t(" + 滚轮 / 触控板捏合")],[t("建立关联"),t("拖动卡片右侧圆点到目标卡片")],[t("粘贴截图"),modifier + ' + V'],[t("取消选择或连线"),'Esc'],[t("保存当前更改"),modifier + ' + S'],[t("调整右侧栏"),t("拖动左边缘；双击恢复宽度")]
+    [t("新建任务"),'N'],[t("搜索任务或卡片"),'/'],[t("添加卡片"),t("底部工具栏")],[t("编辑卡片"),t("双击卡片")],[t("移动卡片"),t("拖动卡片")],[t("移动画布"),t("拖动空白处 / 中键拖动 / 滚轮")],[t("缩放画布"),modifier + t(" + 滚轮 / 触控板捏合")],[t("建立关联"),t("拖动卡片右侧圆点到目标卡片")],[t("小地图"),t("点击跳转，拖动视口框或使用方向键移动画布")],[t("粘贴截图"),modifier + ' + V'],[t("取消选择或连线"),'Esc'],[t("保存当前更改"),modifier + ' + S'],[t("调整右侧栏"),t("拖动左边缘；双击恢复宽度")]
   ].map(([name,key])=>'<div class="help-row"><strong>'+name+'</strong><kbd>'+key+'</kbd></div>').join('')+("<p class=\"help-note\">" + esc(t("文件也可以直接拖到画布里，单个附件最大 25 MB。")) + "<br>" + esc(t("左下角菜单可打开数据文件夹、导出包含附件的备份。")) + "<br>" + esc(t("首版用于手动组织工作，连线表示关联关系。")) + "</p>"),("<button class=\"primary\" data-close-modal>" + esc(t("开始整理")) + "</button>"));
 }
 function showHistory() {

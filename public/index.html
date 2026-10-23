@@ -48,6 +48,10 @@
     <section class="workspace" id="workspace" aria-label="Task canvas" data-i18n-aria-label="任务画布">
       <div class="canvas" id="canvas"><div id="canvas-world" class="canvas-world"><svg id="edges" class="edges" xmlns="http://www.w3.org/2000/svg"><defs><marker id="edge-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0 0L7 3.5L0 7" fill="none" stroke="#b0b4c8" stroke-width="1.1"/></marker></defs><g id="edge-paths"></g></svg><div id="nodes"></div></div></div>
       <div class="canvas-caption"><span class="canvas-caption-icon" data-icon="layers"></span><span id="canvas-caption"><span data-i18n="每一个想法，都有自己的位置">A place for every idea</span></span></div>
+      <section class="canvas-minimap hidden" id="minimap" aria-label="Canvas minimap" data-i18n-aria-label="画布小地图">
+        <div class="minimap-heading"><span data-i18n="小地图">Minimap</span><button id="toggle-minimap" aria-label="Collapse minimap" data-i18n-aria-label="收起小地图" title="Collapse minimap" data-i18n-title="收起小地图" aria-expanded="true" aria-controls="minimap-surface">−</button></div>
+        <svg id="minimap-surface" class="minimap-surface" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="group" aria-label="Click to navigate, drag the viewport to pan, or use the arrow keys" data-i18n-aria-label="点击跳转，拖动视口框或使用方向键移动画布"></svg>
+      </section>
       <div class="empty-state hidden" id="empty-state"><div class="empty-icon"><span data-icon="layers"></span></div><h2 data-i18n="一张空白桌面，一个新的开始">A clear desk. A fresh start.</h2><p data-i18n="放下一个待办、一段想法，或者直接拖入文件。">Add a task, capture an idea, or drop a file here.</p><button class="primary" id="empty-add"><span data-icon="plus"></span><span data-i18n="添加第一张卡片">Add your first card</span></button><small data-i18n="截图也可以直接粘贴到这里">You can paste screenshots here, too</small></div>
       <div class="list-surface hidden" id="list-surface"></div>
       <div class="canvas-hint" id="canvas-hint"><span data-i18n="拖动空白处平移">Drag empty space to pan</span><span>·</span><span data-i18n="双击卡片编辑">Double-click a card to edit</span><span>·</span><span data-i18n="Ctrl + 滚轮缩放">Ctrl + scroll to zoom</span></div>

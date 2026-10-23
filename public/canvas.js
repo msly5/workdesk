@@ -3,6 +3,7 @@ import {t,formatNumber} from './i18n.js';
 const INTERACTIVE = 'button,a,input,textarea,select,[contenteditable]:not([contenteditable="false"]),.edge-group';
 
 export class Canvas {
+  get interacting() { return !!this.drag || !!this.minimap?.drag; }
   constructor(options) {
     Object.assign(this, options);
     this.el = document.querySelector('#canvas');
@@ -34,6 +35,7 @@ export class Canvas {
     new ResizeObserver(() => this.renderEdges()).observe(this.nodesEl);
   }
   render() {
+    this.minimap?.endDrag();
     if (this.drag) this.pointerUp({ pointerId: this.drag.pointerId });
     const task = this.getTask();
     this.nodesEl.innerHTML = task ? task.nodes.map(node => this.renderCard(node)).join('') : '';
@@ -54,6 +56,7 @@ export class Canvas {
   select(id) {
     this.selected = id;
     this.nodesEl.querySelectorAll('.node').forEach(el => el.classList.toggle('selected', el.dataset.id === id));
+    this.minimap?.update();
   }
   updateTransform() {
     const view = this.getTask()?.viewport;
@@ -62,8 +65,10 @@ export class Canvas {
     this.el.parentElement.style.backgroundPosition = view.x + 'px ' + view.y + 'px';
     this.el.parentElement.style.backgroundSize = 20 * view.zoom + 'px ' + 20 * view.zoom + 'px';
     document.querySelector('#zoom-value').textContent = formatNumber(view.zoom,{style:'percent',maximumFractionDigits:0});
+    this.minimap?.update();
   }
   renderEdges() {
+    this.minimap?.update();
     const task = this.getTask();
     if (!task) { this.paths.innerHTML = ''; return; }
     this.paths.innerHTML = task.edges.map(edge => {
@@ -101,7 +106,7 @@ export class Canvas {
     if (this.drag?.kind === 'connection') this.pointerUp({ pointerId:this.drag.pointerId, type:'pointercancel' });
   }
   pointerDown(event) {
-    if (this.drag || (event.button !== 0 && event.button !== 1)) return;
+    if (this.interacting || (event.button !== 0 && event.button !== 1)) return;
     const task = this.getTask(); if (!task) return;
     const handle = event.button === 0 ? event.target.closest('[data-connect]') : null;
     if (handle && task.nodes.some(node => node.id === handle.dataset.connect)) {
@@ -177,7 +182,7 @@ export class Canvas {
   wheel(event) {
     if (!this.getTask()) return;
     event.preventDefault();
-    if (this.drag) return;
+    if (this.interacting) return;
     // Trackpads report pixels; some mice report lines or pages.
     const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? this.el.clientHeight : 1;
     let dx = event.deltaX * unit, dy = event.deltaY * unit;
@@ -192,6 +197,7 @@ export class Canvas {
     }
   }
   zoom(factor, cx = this.el.clientWidth / 2, cy = this.el.clientHeight / 2) {
+    if (this.minimap?.drag) return;
     const view = this.getTask()?.viewport; if (!view) return;
     const zoom = Math.min(2, Math.max(.2, view.zoom * factor));
     view.x = cx - (cx - view.x) * zoom / view.zoom;
@@ -200,6 +206,7 @@ export class Canvas {
     this.updateTransform(); this.onChange();
   }
   fit() {
+    this.minimap?.endDrag();
     const task = this.getTask(); if (!task?.nodes.length) { if (task) { task.viewport = {x:0,y:0,zoom:1}; this.updateTransform(); this.onChange(); } return; }
     const minX = Math.min(...task.nodes.map(n => n.x)), minY = Math.min(...task.nodes.map(n => n.y));
     const maxX = Math.max(...task.nodes.map(n => n.x + n.width));

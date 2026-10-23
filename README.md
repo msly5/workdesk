@@ -56,7 +56,11 @@ The macOS launcher only reuses the service recorded for this project directory. 
 
 Create a task in the left sidebar and add cards from the bottom toolbar. Double-click a card to open its inspector. Drag a card's right-side connection handle onto another card and release to link them. A preview line follows the pointer and highlights the target; release over empty space or press Esc to cancel. Click a line to edit its label or remove it. To-dos can be checked directly on the canvas.
 
-Drag empty canvas space to pan, scroll to move, and use **Ctrl+scroll** to zoom; macOS also supports **Cmd+scroll**. Use the fit-content button to bring cards into view. **Ctrl+S / Cmd+S** saves immediately, and **Ctrl+V / Cmd+V** pastes a screenshot when you are not editing a text field.
+Drag empty canvas space to pan, scroll to move, and use **Ctrl+scroll** to zoom; macOS also supports **Cmd+scroll**. The minimap in the upper-right corner shows all cards, connections and the current viewport. Click it to jump to an area, or drag the viewport frame to pan. Focus it and use the arrow keys for keyboard navigation. You can collapse it with the header button. Use the fit-content button to bring cards into view. **Ctrl+S / Cmd+S** saves immediately, and **Ctrl+V / Cmd+V** pastes a screenshot when you are not editing a text field.
+
+![Workdesk minimap in the upper-right corner with cards, connections and the current viewport](docs/screenshots/minimap-overview.jpg)
+
+*Navigate a larger board with the minimap while keeping the current area in focus.*
 
 ![Markdown table displayed in Workdesk's right-hand inspector](docs/screenshots/markdown-preview.jpg)
 

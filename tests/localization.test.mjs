@@ -183,7 +183,7 @@ test('英文文件操作错误保留用户路径中的中文，不会执行系�
 
 test('本地化静态模块可加载且API内部异常不会泄漏给英文界面', async t => {
   const {url} = await appFixture(t);
-  for (const file of ['i18n.js','messages-app.js','messages-static.js','i18n.css']) {
+  for (const file of ['i18n.js','messages-app.js','messages-static.js','i18n.css','minimap.js']) {
     const response = await fetch(url+'/'+file);
     assert.equal(response.status, 200, file);
     assert.ok((await response.text()).length > 0, file);
