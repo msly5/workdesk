@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#7367df">
+  <script src="/theme.js"></script>
   <title data-i18n="本地工作台">Workdesk</title>
   <meta name="description" content="A local desk for every task. Organize tasks, documents, screenshots, and attachments on separate canvases, with workspace data saved on this computer." data-i18n-content="每件工作一张桌面。用独立画布整理任务、文档、截图和附件，所有内容保存在本机。">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -12,6 +13,7 @@
   <link rel="stylesheet" href="/canvas-interaction.css">
   <link rel="stylesheet" href="/inspector.css">
   <link rel="stylesheet" href="/i18n.css">
+  <link rel="stylesheet" href="/theme.css">
   <script src="/i18n.js" type="module"></script>
 </head>
 <body>
@@ -29,6 +31,7 @@
     <div class="section-label"><span id="task-list-label"><span data-i18n="我的任务">My tasks</span></span><button class="icon-button tiny" id="new-task-small" aria-label="Add task" data-i18n-aria-label="添加任务"><span data-icon="plus"></span></button></div>
     <div id="task-list" class="task-list"></div>
     <div class="sidebar-bottom">
+      <div class="language-picker theme-picker"><label for="theme-select" data-i18n="外观">Appearance</label><select id="theme-select" aria-label="Interface appearance" data-i18n-aria-label="界面外观"><option value="system" data-i18n="跟随系统">System</option><option value="light" data-i18n="浅色">Light</option><option value="dark" data-i18n="深色">Dark</option></select></div>
       <div class="language-picker"><label for="language-select" data-i18n="语言">Language</label><select id="language-select" aria-label="Interface language" data-i18n-aria-label="界面语言"><option value="en" data-i18n="英语">English</option><option value="zh-CN" data-i18n="简体中文">Simplified Chinese</option></select></div>
       <button class="archive-filter" data-filter="archived"><span data-icon="archive"></span><span data-i18n="归档任务">Archived tasks</span><span id="archived-count"></span></button>
       <div class="storage-note"><span class="local-indicator"></span><span data-i18n="内容保存在本机">Saved on this computer</span><span data-icon="folder"></span></div>

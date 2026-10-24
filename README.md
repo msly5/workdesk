@@ -8,11 +8,17 @@ Workdesk runs as a local Node.js service with a browser interface. It does not i
 
 The interface supports **English and Simplified Chinese**, including buttons, menus, dialogs, help and status messages. It follows your browser language on first visit; use the language selector at the bottom of the sidebar to change it. Your choice is remembered in this browser. Switching languages preserves your task and document content.
 
+Choose **System**, **Light** or **Dark** under **Appearance** at the bottom of the sidebar. Appearance follows your system by default, updates immediately and is remembered in this browser. Dark mode covers the canvas, cards, minimap, editor, tables, menus and dialogs; images keep their original colors.
+
 Screenshots show English mode with fictional sample content.
 
 ![Workdesk task canvas with documents, to-dos and reference materials](docs/screenshots/canvas-overview.jpg)
 
 *Task canvas with documents, to-dos and reference materials.*
+
+![Workdesk in dark mode, with its canvas, minimap and Markdown table preview](docs/screenshots/dark-mode.jpg)
+
+*Dark mode keeps the canvas, cards and editor comfortable to read.*
 
 ## Features
 
@@ -23,6 +29,7 @@ Screenshots show English mode with fictional sample content.
 - **Materials alongside your work:** drag in files, paste screenshots, and open or reveal files through Windows Explorer or macOS Finder.
 - **Shared work with agents:** 16 MCP tools cover tasks, cards, to-dos, connections and attachments, with pagination, revision checks and atomic card batches.
 - **Local persistence:** automatic incremental saves, Markdown copies on disk and JSON backup export. Read-only previews and activity panels receive agent updates while preserving scroll position.
+- **Appearance:** light and dark themes, automatic system matching and a remembered browser preference. Switch themes without interrupting your editing.
 
 Connections express relationships; they do not execute scripts or run workflows.
 

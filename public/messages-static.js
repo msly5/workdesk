@@ -1,4 +1,9 @@
 export const staticMessages = {
+  '外观': 'Appearance',
+  '界面外观': 'Interface appearance',
+  '跟随系统': 'System',
+  '浅色': 'Light',
+  '深色': 'Dark',
   '本地工作台': 'Workdesk',
   '每件工作一张桌面。用独立画布整理任务、文档、截图和附件，所有内容保存在本机。': 'A local desk for every task. Organize tasks, documents, screenshots, and attachments on separate canvases, with workspace data saved on this computer.',
   '本地工作台首页': 'Workdesk home',
