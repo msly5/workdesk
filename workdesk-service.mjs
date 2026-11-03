@@ -26,6 +26,7 @@ const cardFields = {
   asset_id:id('现有附件 ID；仅 file/image 卡片可用，新附件使用 attach_file').optional()
 };
 const taskFields = {
+  group_id:id('分组 ID；用 list_groups 查询，null 表示未分组').nullable().optional(),
   title:text(300).min(1).optional().describe('任务名称；仅更新时可省略'),
   tag:text(100).optional().describe('分类标签'),
   goal:text(5000).optional().describe('工作目标或任务说明'),
@@ -42,7 +43,12 @@ const batchOperation = z.discriminatedUnion('operation',[
 ]);
 const definition = (description,shape,readOnly=false,destructive=false) => ({description,schema:z.object(shape).strict(),readOnly,destructive});
 export const toolDefinitions = {
+  list_groups:definition('列出所有任务分组及任务数（含归档）；空分组也保留。',{},true),
+  create_group:definition('新建任务分组。名称必须唯一，折叠状态由各浏览器独立保存。',{name:z.string().trim().min(1).max(80),...expected}),
+  update_group:definition('重命名任务分组；任务归属保持不变。',{group_id:id('分组 ID'),name:z.string().trim().min(1).max(80),...expected}),
+  delete_group:definition('移除分组，成员任务回到未分组；不会删除任何任务或卡片。',{group_id:id('分组 ID'),...expected},false,true),
   list_tasks:definition('查询本地任务，返回 ID、标题、目标、状态、卡片数与当前版本；支持搜索与分页。默认排除归档。',{
+    group_id:taskFields.group_id,
     query:text(300).default('').describe('搜索任务名称、目标或卡片文字'),
     status:z.enum(['all','active','inbox','waiting','done','archived']).default('all').describe('状态筛选；all 不包含归档'),
     ...pagination
@@ -92,7 +98,7 @@ function record(task,message) {
   task.activity=[{id:randomUUID(),text:'AI · '+message,at:task.updatedAt},...(task.activity||[])].slice(0,150);
 }
 function taskSummary(task) {
-  return {id:task.id,title:task.title,tag:task.tag,status:task.status,goal:task.goal,nextAction:task.nextAction,cardCount:task.nodes.length,updatedAt:task.updatedAt};
+  return {id:task.id,title:task.title,groupId:task.groupId??null,tag:task.tag,status:task.status,goal:task.goal,nextAction:task.nextAction,cardCount:task.nodes.length,updatedAt:task.updatedAt};
 }
 function cardSearchText(card) {
   return [card.title,card.content,card.url,card.fileName,card.filePath,card.folderPath,...(card.items||[]).map(item=>item.text)].join(' ').toLowerCase();
@@ -228,9 +234,10 @@ export class WorkdeskService {
     const args=def.schema.parse(input);
     if (def.readOnly) {
       const state=await this.store.read();
+      if (name==='list_groups') return {revision:state.revision,groups:(state.groups||[]).map(group=>({...group,taskCount:state.tasks.filter(task=>task.groupId===group.id).length}))};
       if (name==='list_tasks') {
         const query=args.query.toLowerCase();
-        const matches=state.tasks.filter(t=>(args.status==='all'?t.status!=='archived':t.status===args.status) && (!query || [t.title,t.tag,t.goal,t.nextAction,...t.nodes.map(cardSearchText)].join(' ').toLowerCase().includes(query)));
+        const matches=state.tasks.filter(t=>(args.status==='all'?t.status!=='archived':t.status===args.status) && (args.group_id===undefined || (t.groupId??null)===args.group_id) && (!query || [t.title,t.tag,t.goal,t.nextAction,...t.nodes.map(cardSearchText)].join(' ').toLowerCase().includes(query)));
         return {revision:state.revision,...pageInfo(matches.length,args),tasks:matches.slice(args.offset,args.offset+args.limit).map(taskSummary)};
       }
       const task=findTask(state,args.task_id);
@@ -248,9 +255,22 @@ export class WorkdeskService {
       return this.store.attach(args.task_id,args.name,bytes,args.mime,(state,asset)=>({card:newCard(findTask(state,args.task_id),{type:/^image\/(png|jpeg|webp|gif|svg\+xml|avif)$/.test(asset.mime)?'image':'file',title:args.title||asset.name,asset_id:asset.id},{...this.store.files,[asset.id]:asset})}),args.expected_revision);
     }
     return this.store.mutate(state=>{
+      state.groups ??= [];
+      if (name==='create_group') {
+        const group={id:randomUUID(),name:args.name};state.groups.push(group);return {group};
+      }
+      if (name==='update_group' || name==='delete_group') {
+        const group=state.groups.find(group=>group.id===args.group_id);
+        if (!group) throw new AppError('任务分组不存在',404);
+        if (name==='update_group') {group.name=args.name;return {group};}
+        const moved=state.tasks.filter(task=>task.groupId===group.id);
+        for (const task of moved) {task.groupId=null;record(task,'更新任务信息');}
+        state.groups=state.groups.filter(item=>item.id!==group.id);
+        return {removed:group,movedTaskIds:moved.map(task=>task.id)};
+      }
       if (name==='create_task') {
         const now=new Date().toISOString();
-        const task={id:randomUUID(),title:args.title,tag:args.tag||'',goal:args.goal||'',nextAction:args.next_action||'',status:args.status||'active',icon:'layers',createdAt:now,updatedAt:now,nodes:[],edges:[],viewport:{x:0,y:0,zoom:1},activity:[]};
+        const task={id:randomUUID(),title:args.title,groupId:args.group_id??null,tag:args.tag||'',goal:args.goal||'',nextAction:args.next_action||'',status:args.status||'active',icon:'layers',createdAt:now,updatedAt:now,nodes:[],edges:[],viewport:{x:0,y:0,zoom:1},activity:[]};
         record(task,'创建任务');state.tasks.unshift(task);if(!state.activeTaskId)state.activeTaskId=task.id;
         return {task};
       }
@@ -258,6 +278,7 @@ export class WorkdeskService {
       if (name==='update_task') {
         for (const key of ['title','tag','goal','status']) if (args[key]!==undefined) task[key]=args[key];
         if (args.next_action!==undefined) task.nextAction=args.next_action;
+        if (args.group_id!==undefined) task.groupId=args.group_id;
         record(task,'更新任务信息');return {task:taskSummary(task)};
       }
       if (name==='create_card') return {card:newCard(task,args,this.store.files)};

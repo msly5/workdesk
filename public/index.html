@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/inspector.css">
   <link rel="stylesheet" href="/i18n.css">
   <link rel="stylesheet" href="/theme.css">
+  <link rel="stylesheet" href="/organization.css">
   <script src="/i18n.js" type="module"></script>
 </head>
 <body>
@@ -28,11 +29,10 @@
       <button class="filter" data-filter="done"><span data-icon="checkCircle"></span><span data-i18n="已完成">Completed</span><span class="count"></span></button>
     </nav>
     <div class="sidebar-divider"></div>
-    <div class="section-label"><span id="task-list-label"><span data-i18n="我的任务">My tasks</span></span><button class="icon-button tiny" id="new-task-small" aria-label="Add task" data-i18n-aria-label="添加任务"><span data-icon="plus"></span></button></div>
+    <div class="section-label"><span id="task-list-label"><span data-i18n="我的任务">My tasks</span></span><span class="section-actions"><button class="icon-button tiny" id="new-group" aria-label="New group" data-i18n-aria-label="新建分组" title="New group" data-i18n-title="新建分组"><span data-icon="folderPlus"></span></button><button class="icon-button tiny" id="new-task-small" aria-label="Add task" data-i18n-aria-label="添加任务"><span data-icon="plus"></span></button></span></div>
     <div id="task-list" class="task-list"></div>
     <div class="sidebar-bottom">
-      <div class="language-picker theme-picker"><label for="theme-select" data-i18n="外观">Appearance</label><select id="theme-select" aria-label="Interface appearance" data-i18n-aria-label="界面外观"><option value="system" data-i18n="跟随系统">System</option><option value="light" data-i18n="浅色">Light</option><option value="dark" data-i18n="深色">Dark</option></select></div>
-      <div class="language-picker"><label for="language-select" data-i18n="语言">Language</label><select id="language-select" aria-label="Interface language" data-i18n-aria-label="界面语言"><option value="en" data-i18n="英语">English</option><option value="zh-CN" data-i18n="简体中文">Simplified Chinese</option></select></div>
+      <button class="settings-nav" id="open-settings"><span data-icon="settings"></span><span data-i18n="设置">Settings</span></button>
       <button class="archive-filter" data-filter="archived"><span data-icon="archive"></span><span data-i18n="归档任务">Archived tasks</span><span id="archived-count"></span></button>
       <div class="storage-note"><span class="local-indicator"></span><span data-i18n="内容保存在本机">Saved on this computer</span><span data-icon="folder"></span></div>
       <button class="profile" id="workspace-menu"><span class="profile-avatar" data-i18n="我">ME</span><span><span data-i18n="我的工作台">My desk</span><small data-i18n="给工作留一点秩序">Make room for focused work</small></span><span data-icon="more"></span></button>
@@ -73,6 +73,18 @@
       <div class="zoom-toolbar"><button class="icon-button" id="zoom-out" title="Zoom out" data-i18n-title="缩小" aria-label="Zoom out" data-i18n-aria-label="缩小"><span data-icon="zoomOut"></span></button><button id="zoom-value" class="zoom-value" title="Reset to 100%" data-i18n-title="还原至 100%">100%</button><button class="icon-button" id="zoom-in" title="Zoom in" data-i18n-title="放大" aria-label="Zoom in" data-i18n-aria-label="放大"><span data-icon="zoomIn"></span></button><span></span><button class="icon-button" id="fit-content" title="Fit content" data-i18n-title="适应内容" aria-label="Fit content" data-i18n-aria-label="适应内容"><span data-icon="fit"></span></button></div>
       <div class="drop-overlay hidden" id="drop-overlay"><span data-icon="upload"></span><strong data-i18n="松手，放进当前工作区">Drop into this workspace</strong><span data-i18n="图片、文档和附件，都可以留在这里">Keep images, documents, and attachments together</span></div>
       <div class="connection-banner hidden" id="connection-banner"><span data-icon="link"></span><span id="connection-hint" data-i18n="点击目标卡片，建立关联">Click another card to connect it</span><button id="cancel-connection" data-i18n="取消 Esc">Cancel · Esc</button></div>
+    </section>
+    <section class="settings-page hidden" id="settings-page" aria-labelledby="settings-title">
+      <div class="settings-content">
+        <button class="subtle-button" id="back-to-workspace"><span data-icon="back"></span><span data-i18n="返回工作区">Back to workspace</span></button>
+        <h1 id="settings-title" tabindex="-1" data-i18n="设置">Settings</h1>
+        <p class="settings-intro" data-i18n="让工作台更适合你的习惯。">Make Workdesk feel like your own.</p>
+        <div class="settings-card">
+          <div class="settings-row"><div><h2 data-i18n="外观">Appearance</h2><p data-i18n="选择浅色、深色，或跟随系统外观。">Choose light, dark, or follow your system.</p></div><div class="language-picker theme-picker"><label for="theme-select" data-i18n="外观">Appearance</label><select id="theme-select" aria-label="Interface appearance" data-i18n-aria-label="界面外观"><option value="system" data-i18n="跟随系统">System</option><option value="light" data-i18n="浅色">Light</option><option value="dark" data-i18n="深色">Dark</option></select></div></div>
+          <div class="settings-row"><div><h2 data-i18n="语言">Language</h2><p data-i18n="切换所有界面文字；你写下的内容保持原样。">Change the interface language. Your own content stays as written.</p></div><div class="language-picker"><label for="language-select" data-i18n="语言">Language</label><select id="language-select" aria-label="Interface language" data-i18n-aria-label="界面语言"><option value="en" data-i18n="英语">English</option><option value="zh-CN" data-i18n="简体中文">Simplified Chinese</option></select></div></div>
+        </div>
+        <p class="settings-note" data-i18n="这些偏好保存在当前浏览器中。">These preferences are saved in this browser.</p>
+      </div>
     </section>
   </main>
   <aside class="inspector hidden" id="inspector" aria-label="Card editor" data-i18n-aria-label="卡片编辑器"></aside>

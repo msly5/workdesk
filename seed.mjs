@@ -1,7 +1,7 @@
 export function seedState(locale = 'zh-CN') {
   const now = new Date().toISOString();
   const state = {
-    revision: 0, activeTaskId: 'task-welcome',
+    revision: 0, activeTaskId: 'task-welcome', groups: [],
     tasks: [
       {
         id: 'task-welcome', title: '本地工作台 · 第一版', icon: 'layers', tag: '个人项目', status: 'active',

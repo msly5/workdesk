@@ -1,4 +1,7 @@
 const paths = {
+  settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="var(--panel,#fff)"/><circle cx="15" cy="17" r="3" fill="var(--panel,#fff)"/>',
+  folderPlus: '<path d="M3 7V5h6l2 2h10v13H3V7Z M12 10v7M8.5 13.5h7"/>',
+  back: '<path d="m10 5-7 7 7 7M3 12h18"/>',
   layers: '<path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',

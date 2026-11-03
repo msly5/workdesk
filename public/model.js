@@ -67,6 +67,8 @@ export function mergeStates(base, local, remote) {
     throw new MergeConflict(field);
   }
   const result = merge(base,local,remote,''); result.revision=remote.revision;
+  const groups = new Set((result.groups || []).map(group=>group.id));
+  for (const task of result.tasks) if (task.groupId != null && !groups.has(task.groupId)) throw new MergeConflict('groupId');
   // A card removed by one writer cannot leave a newly merged dangling connection.
   for (const task of result.tasks) {
     const ids = new Set(task.nodes.map(n=>n.id));

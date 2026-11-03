@@ -1,6 +1,9 @@
 // Translate only application-authored messages. User content and path suffixes
 // are never run through a general translation or replacement pass.
 const english = new Map([
+  ['分组格式无效', 'The groups have an invalid format.'],
+  ['分组名称为空或重复', 'Group names must be nonempty and unique.'],
+  ['任务分组不存在', 'The task group no longer exists.'],
   ['内容超过大小限制', 'The request exceeds the size limit.'],
   ['仅支持本机访问', 'Only local access is supported.'],
   ['拒绝来自其他网站的修改请求', 'Changes from other websites are not allowed.'],

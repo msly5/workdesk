@@ -16,9 +16,18 @@ function validId(id) { if (typeof id !== 'string' || !ID.test(id)) throw new App
 function text(value, max = 200000) { if (typeof value !== 'string' || value.length > max) throw new AppError('内容格式无效或过长'); }
 export function validateState(state) {
   if (!state || !Array.isArray(state.tasks) || state.tasks.length > 1000 || !Number.isInteger(state.revision) || state.revision < 0) throw new AppError('工作区数据格式无效');
+  if (state.groups !== undefined && (!Array.isArray(state.groups) || state.groups.length > 200)) throw new AppError('分组格式无效');
+  const groups = new Set(), names = new Set();
+  for (const group of state.groups || []) {
+    validId(group?.id); text(group.name, 80);
+    const name = group.name.trim().toLowerCase();
+    if (!name || group.name !== group.name.trim() || groups.has(group.id) || names.has(name)) throw new AppError('分组名称为空或重复');
+    groups.add(group.id); names.add(name);
+  }
   const ids = new Set();
   for (const task of state.tasks) {
     validId(task.id); if (ids.has(task.id)) throw new AppError('任务标识重复'); ids.add(task.id);
+    if (task.groupId != null && !groups.has(task.groupId)) throw new AppError('任务分组不存在');
     text(task.title, 300); text(task.goal ?? '', 5000); text(task.nextAction ?? '', 5000);
     if (!STATUSES.has(task.status) || !Array.isArray(task.nodes) || !Array.isArray(task.edges) || task.nodes.length > 2000 || task.edges.length > 5000) throw new AppError('任务格式无效');
     const nodes = new Set();
@@ -74,6 +83,7 @@ export class Store {
       await this.atomic(path.join(this.dir, 'state.json'), JSON.stringify(this.state, null, 2));
       created = true;
     }
+    this.state.groups ??= [];
     try { this.files = JSON.parse(await readFile(path.join(this.dir, 'files.json'), 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; this.files = {}; }
     for (const {id, name, content, mime} of demoAssets()) {

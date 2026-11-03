@@ -11,7 +11,7 @@ import { requestLocale, localizedError } from './localization.mjs';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MIME = { '.html':'text/html; charset=utf-8', '.css':'text/css; charset=utf-8', '.js':'text/javascript; charset=utf-8', '.svg':'image/svg+xml' };
-const STATIC = new Set(['index.html', 'styles.css', 'theme.js', 'theme.css', 'app.js', 'canvas.js', 'minimap.js', 'markdown.js', 'markdown.css', 'canvas-interaction.css', 'inspector.js', 'inspector.css', 'icons.js', 'model.js', 'changes.js', 'editor-state.js', 'i18n.js', 'messages-app.js', 'messages-static.js', 'i18n.css', 'favicon.svg']);
+const STATIC = new Set(['index.html', 'styles.css', 'theme.js', 'theme.css', 'organization.css', 'app.js', 'canvas.js', 'minimap.js', 'markdown.js', 'markdown.css', 'canvas-interaction.css', 'inspector.js', 'inspector.css', 'icons.js', 'model.js', 'changes.js', 'editor-state.js', 'i18n.js', 'messages-app.js', 'messages-static.js', 'i18n.css', 'favicon.svg']);
 async function body(req, limit) {
   let length = 0; const chunks = [];
   for await (const chunk of req) {

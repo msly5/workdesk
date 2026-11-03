@@ -90,17 +90,26 @@ test('other tabs and clearing preferences update the appearance without a reload
   assert.equal(app.root.dataset.theme, 'dark');
 });
 
-test('theme assets are served under the application CSP and the early script precedes styles', async t => {
+test('settings contains appearance and language controls, and its assets are served under the application CSP', async t => {
   const dir = await mkdtemp(path.join(tmpdir(), 'workdesk-theme-test-'));
   const server = await createApp({dataDir:dir});
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {await new Promise(resolve => server.close(resolve)); await rm(dir, {recursive:true, force:true});});
   const base = 'http://127.0.0.1:'+server.address().port;
-  for (const asset of ['theme.js','theme.css']) {
+  for (const asset of ['theme.js','theme.css','organization.css']) {
     const response = await fetch(base+'/'+asset);
     assert.equal(response.status, 200);
     assert.match(response.headers.get('content-security-policy'), /script-src 'self'/);
   }
   const html = await (await fetch(base)).text();
   assert.ok(html.indexOf('src="/theme.js"') < html.indexOf('href="/styles.css"'));
+  const sidebar=html.match(/<aside[^>]+id="sidebar"[\s\S]*?<\/aside>/)?.[0];
+  const settings=html.match(/<section[^>]+id="settings-page"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(sidebar);assert.ok(settings);
+  assert.match(sidebar,/id="open-settings"/);
+  for (const id of ['theme-select','language-select']) {
+    assert.ok(settings.includes('id="'+id+'"'));
+    assert.ok(!sidebar.includes('id="'+id+'"'));
+    assert.equal(html.split('id="'+id+'"').length-1,1);
+  }
 });

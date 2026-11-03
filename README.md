@@ -6,9 +6,9 @@ A local-first task workspace for people and AI agents. Give each task its own ca
 
 Workdesk runs as a local Node.js service with a browser interface. It does not include a model or require a Workdesk account.
 
-The interface supports **English and Simplified Chinese**, including buttons, menus, dialogs, help and status messages. It follows your browser language on first visit; use the language selector at the bottom of the sidebar to change it. Your choice is remembered in this browser. Switching languages preserves your task and document content.
+The interface supports **English and Simplified Chinese**, including buttons, menus, dialogs, help and status messages. It follows your browser language on first visit; open **Settings → Language** to change it. Your choice is remembered in this browser. Switching languages preserves your task and document content.
 
-Choose **System**, **Light** or **Dark** under **Appearance** at the bottom of the sidebar. Appearance follows your system by default, updates immediately and is remembered in this browser. Dark mode covers the canvas, cards, minimap, editor, tables, menus and dialogs; images keep their original colors.
+Choose **System**, **Light** or **Dark** under **Settings → Appearance**. Appearance follows your system by default, updates immediately and is remembered in this browser. Dark mode covers the canvas, cards, minimap, editor, tables, menus and dialogs; images keep their original colors.
 
 Screenshots show English mode with fictional sample content.
 
@@ -23,11 +23,12 @@ Screenshots show English mode with fictional sample content.
 ## Features
 
 - **A canvas for each task:** track goals, next actions, status and activity; search, archive and restore tasks; switch between canvas and list views.
+- **Collapsible task groups:** create and rename groups, move tasks between them, and remember collapsed groups in this browser. Search expands matching results; removing a group keeps its tasks under Ungrouped.
 - **Six card types:** to-do lists, Markdown documents, notes, links, images and files. Link cards can also reference local folders; file cards can reference original local files.
 - **Direct manipulation:** drag cards, pan and zoom the canvas, and connect cards with labeled relationships. Resize the right-hand inspector by dragging its left edge; its width is remembered in the browser.
 - **Markdown editing and preview:** headings, lists, bold text, quotes, fenced code, links and tables, including column alignment and horizontal scrolling. Download documents as `.md` files.
 - **Materials alongside your work:** drag in files, paste screenshots, and open or reveal files through Windows Explorer or macOS Finder.
-- **Shared work with agents:** 16 MCP tools cover tasks, cards, to-dos, connections and attachments, with pagination, revision checks and atomic card batches.
+- **Shared work with agents:** 20 MCP tools cover groups, tasks, cards, to-dos, connections and attachments, with pagination, revision checks and atomic card batches.
 - **Local persistence:** automatic incremental saves, Markdown copies on disk and JSON backup export. Read-only previews and activity panels receive agent updates while preserving scroll position.
 - **Appearance:** light and dark themes, automatic system matching and a remembered browser preference. Switch themes without interrupting your editing.
 
@@ -143,10 +144,17 @@ Both transports require the workspace service to be running. The stdio entry poi
 
 Try asking your agent: “Create a task for this week's work, add a meeting-notes document and a to-do list with three actions.” Or: “Read the notes in this task, add today's progress and check off the completed actions.”
 
+### Task groups and settings
+
+Use the folder-plus button beside **My tasks** to create a group. Click its chevron to collapse or expand it; the group menu lets you rename it or add a task directly. Move an existing task using **Task menu → Move to group** or the group selector in **Edit task**. Groups are saved with workspace data, including empty groups. Collapse preferences are local to each browser.
+
+Open **Settings** at the bottom of the sidebar for language and appearance. The settings page can also be opened at `http://127.0.0.1:4317/#/settings`.
+
 ### MCP coverage
 
 | Tools | Purpose |
 | --- | --- |
+| `list_groups`, `create_group`, `update_group`, `delete_group` | List, create, rename or remove groups; removing a group keeps all member tasks |
 | `list_tasks`, `get_task` | Search tasks and read a complete task canvas |
 | `create_task`, `update_task` | Create tasks; update titles, goals, next actions and status; archive or restore |
 | `list_cards`, `get_card` | Search and paginate card summaries; read complete card content |
@@ -157,7 +165,7 @@ Try asking your agent: “Create a task for this week's work, add a meeting-note
 | `attach_file` | Upload base64-encoded bytes and add an attachment/image card |
 | `read_attachment` | Read an uploaded attachment in bounded chunks |
 
-There are **16 tools, one fixed resource and two resource templates**:
+There are **20 tools, one fixed resource and two resource templates**:
 
 | Resource or template | Content |
 | --- | --- |
@@ -165,7 +173,9 @@ There are **16 tools, one fixed resource and two resource templates**:
 | `workdesk://tasks/{taskId}` | Complete task, cards and connections |
 | `workdesk://tasks/pages/{offset}/{limit}` | Paginated unarchived tasks |
 
-List tools return `total`, `has_more` and `next_offset`. Task-list resources provide `next_uri` when another page exists. Use the list tools for search and status/type filters.
+`list_tasks` and `list_cards` return `total`, `has_more` and `next_offset`. Task-list resources provide `next_uri` when another page exists. Use the list tools for search and status/type filters.
+
+`create_task` and `update_task` accept `group_id`; pass `null` to move a task to Ungrouped. `list_tasks` accepts the same filter (omit it for all groups). `list_groups` includes empty groups and task counts including archived tasks.
 
 Tools return the current `revision`. Pass it as `expected_revision` when writing to reject stale changes, then reread if it no longer matches. Writes share one persistence queue. `update_card.content` replaces the whole body, so read the latest card before editing; omitted fields are preserved. Tasks are archived rather than permanently deleted. Removing a card returns its removed card and connection data, while retaining attachment files.
 

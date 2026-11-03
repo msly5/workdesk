@@ -4,7 +4,7 @@ import { MergeConflict } from './model.js';
 // A missing before/after means add/remove; null remains an ordinary value.
 const ID = /^[a-zA-Z0-9_-]{1,80}$/;
 const FORBIDDEN = new Set(['__proto__', 'prototype', 'constructor']);
-const ROOT_FIELDS = new Set(['tasks', 'activeTaskId']);
+const ROOT_FIELDS = new Set(['tasks', 'activeTaskId', 'groups']);
 const MAX_CHANGES = 10000, MAX_DEPTH = 32, MAX_BYTES = 16 * 1024 * 1024;
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -73,7 +73,7 @@ function validateJSON(value, limit = 1000000, checkIds = true) {
 
 function validateWorkspace(value) {
   validateJSON(value);
-  if (!object(value) || !idArray(value.tasks) || !own(value, 'activeTaskId') ||
+  if (!object(value) || !idArray(value.tasks) || (own(value, 'groups') && !idArray(value.groups)) || !own(value, 'activeTaskId') ||
       !Number.isInteger(value.revision) || value.revision < 0 ||
       Object.keys(value).some(key => key !== 'revision' && !ROOT_FIELDS.has(key))) fail('工作区根字段无效');
 }
@@ -88,7 +88,7 @@ function validatePath(path) {
     } else if (!selector(part) || Object.keys(part).length !== 1 || typeof part.id !== 'string' || !ID.test(part.id)) fail('ID 路径无效');
   }
   if (path[0] === 'activeTaskId' && path.length !== 1) fail('activeTaskId 不能有子路径');
-  if (path[0] === 'tasks' && path.length > 1 && !selector(path[1])) fail('任务必须按 ID 寻址');
+  if (['tasks', 'groups'].includes(path[0]) && path.length > 1 && !selector(path[1])) fail('任务必须按 ID 寻址');
 }
 
 function validateChanges(changes) {
@@ -102,7 +102,7 @@ function validateChanges(changes) {
     const key = JSON.stringify(change.path);
     if (change.op === 'set') {
       if (Object.keys(change).some(name => !['op', 'path', 'before', 'after'].includes(name)) || (!own(change, 'before') && !own(change, 'after'))) fail('set 操作字段无效');
-      if (change.path.length === 1 && change.path[0] === 'tasks') fail('任务集合必须按 ID 修改');
+      if (change.path.length === 1 && ['tasks', 'groups'].includes(change.path[0])) fail('任务集合必须按 ID 修改');
       if (setPaths.has(key)) fail('重复写入同一路径');
       for (const field of ['before', 'after']) if (own(change, field)) validateJSON(change[field], 250000);
       setPaths.add(key);
@@ -146,7 +146,10 @@ export function createChanges(base, local) {
       if (!activityPath(path) && !equal(before.map(item => item.id), after.map(item => item.id))) changes.push({op:'order', path, ids:after.map(item => item.id)});
     } else set(path, before, after, true, true);
   }
-  for (const key of ROOT_FIELDS) diff(base[key], local[key], [key], own(base, key), own(local, key));
+  for (const key of ROOT_FIELDS) {
+    if (key === 'groups') diff(base.groups || [], local.groups || [], [key]);
+    else diff(base[key], local[key], [key], own(base, key), own(local, key));
+  }
   validateChanges(changes);
   return changes;
 }
@@ -171,6 +174,7 @@ function locate(root, path) {
 export function applyChanges(current, changes) {
   validateWorkspace(current); validateChanges(changes);
   const result = structuredClone(current);
+  if (changes.some(change => change.path[0] === 'groups')) result.groups ??= [];
   for (const change of changes.filter(change => change.op === 'set')) {
     const {path} = change, target = locate(result, path);
     const hadBefore = own(change, 'before'), hasAfter = own(change, 'after');
@@ -207,6 +211,8 @@ export function applyChanges(current, changes) {
     task.activity.sort((a, b) => b.at.localeCompare(a.at)); task.activity = task.activity.slice(0, 150);
   }
   validateWorkspace(result);
+  const groups = new Set((result.groups || []).map(group => group.id));
+  for (const task of result.tasks) if (task.groupId != null && !groups.has(task.groupId)) conflict(['tasks', {id:task.id}, 'groupId']);
   // Independent card/edge edits can each be valid yet create a dangling edge
   // after merging. Surface this as a collaboration conflict, not invalid input.
   for (const task of result.tasks) if (Array.isArray(task.nodes) && Array.isArray(task.edges)) {
